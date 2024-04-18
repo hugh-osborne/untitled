@@ -1,16 +1,13 @@
 import numpy as np
 from visualiser import Visualiser
 
-class Bone:
-    def __init__(self, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, name="bone", parent=None, mass=1.0, location_in_parent=np.zeros(3)):
+class Object:
+    def __init__(self, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, com_world=np.zeros((3,1)), name="bone", mass=1.0):
         self.name = name
-        self.parent = parent
-        self.children = []
-        self.origin_in_parent_space = location_in_parent
         self.mass = mass
         self.local_I = np.matrix([[I_xx, -I_xy, -I_xz],[-I_xy, I_yy, -I_yz],[-I_xz, -I_yz, I_zz]]) # Inertia Matrix
         self.local_I_i = np.linalg.inv(self.local_I) # Inverse Inertia Matrix
-        self.x = np.zeros((3,1)) # position
+        self.x = com_world # world position of the centre of mass
         self.q = np.zeros((4,1)) # orientation quaternion - assuming index 0 is the real part then i,j,k
         self.q[0,0] = 1
         self.P = np.zeros((3,1)) # linear momentum
@@ -135,7 +132,35 @@ class Bone:
         mat = np.hstack((mat, np.zeros((4,1))))
         mat[3,3] = 1.0
         return np.transpose(mat)
-           
+    
+    def local2world(self, point_3d):
+        point_4d = np.reshape(np.array([point_3d[0], point_3d[1], point_3d[2], 1.0]), (4,1))
+        return np.matmul(self.getMatrix(), point_4d)[:3,0]
+
+class Bone(Object):
+    def __init__(self, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, com_world=np.zeros((3,1)), name="bone", mass=1.0, parent=None, pivot_local=None):
+        super().__init__(I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, com_world, name, mass)
+        self.parent = parent
+        self.parent_pivot = pivot_local
+        self.child = None
+        self.child_pivot = None
+        
+    def draw(self, visualiser):
+        if self.parent is not None:
+            if self.child is not None: # we have a parent bone and a child bone so draw a line between the pivot points
+                vis.drawLine(self.local2world(self.parent_pivot), self.local2world(self.child_pivot))
+                vis.drawCube(matrix=self.getMatrix(), model_pos=self.parent_pivot, scale=0.02, col=(1,0,0,1))
+                vis.drawCube(matrix=self.getMatrix(), model_pos=self.child_pivot, scale=0.02, col=(1,0,0,1))
+            else: # we only have a parent bone so draw a line between the parent pivot and the centre of mass
+                print(self.local2world(self.parent_pivot).shape)
+                vis.drawLine(self.local2world(self.parent_pivot), self.x[:,0])
+                vis.drawCube(matrix=self.getMatrix(), model_pos=self.parent_pivot, scale=0.02, col=(1,0,0,1))
+                vis.drawCube(matrix=self.getMatrix(), scale=0.02, col=(1,0,0,1))
+        else: # we have no parent or child so just draw a cube at the centre of mass (for now the size is arbitrary)
+            vis.drawCube(matrix=self.getMatrix(), scale=0.02, col=(1,0,0,1))
+        
+        
+        
 
 class Muscle:
     def __init__(self):
@@ -145,7 +170,8 @@ class Joint:
     def __init__(self):
         self.name = "joint"
         
-bone = Bone(0.0001,0.0001,0.0001,0,0,0)
+ground = Bone(1.0,1.0,1.0,0.0,0.0,0.0, com_world=np.reshape(np.array([0.0,0.5,0.0]), (3,1)))
+bone = Bone(0.0001,0.0001,0.0001,0,0,0, parent=ground, pivot_local=np.array([0.0,0.5,0.0]))
 bone.addLinearForce(np.transpose(np.array([[0.0,-9.8,0.0]])))
 bone.addForce(np.transpose(np.array([[0.0,0.5,0.0]])), np.transpose(np.array([[0.3,0.0,0.0]]))) # Add a force that acts upwards with 1N 0.3 across from the origin 
 
@@ -156,5 +182,6 @@ for i in range(1000):
     bone.euler(0.001)
     bone.forces = []
     vis.beginRendering()
-    vis.drawCube(matrix=bone.getMatrix())
+    ground.draw(vis)
+    bone.draw(vis)
     vis.endRendering()

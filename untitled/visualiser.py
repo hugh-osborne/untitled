@@ -1,3 +1,4 @@
+import pprint
 import numpy as np
 import os
 
@@ -93,9 +94,40 @@ class Visualiser:
 
         glEnd()
         
-    def drawCube(self, matrix=np.identity(4), col=(1,0,0,0.2)):
-        verts = [np.matmul(matrix,np.reshape(np.array(v), (4,1))) for v in self.verts]
+    def drawCube(self, matrix=np.identity(4), scale=1.0, model_pos=np.zeros(3), col=(1,0,0,0.2)):
+        local_matrix = np.identity(4)*scale
+        local_matrix[3,3] = 1.0
+        local_matrix[0,3] = model_pos[0]
+        local_matrix[1,3] = model_pos[1]
+        local_matrix[2,3] = model_pos[2]
+        verts = [np.matmul(local_matrix,np.reshape(np.array(v), (4,1))) for v in self.verts]
+        verts = [np.matmul(matrix,v) for v in verts]
         self.drawVerts(verts, self.surfaces, col)
+        
+    def drawLine(self, p1, p2, col=(1,1,1,1), thickness=5):
+        projection = np.matrix(glGetFloatv(GL_PROJECTION_MATRIX))
+        model = np.matrix(glGetFloatv(GL_MODELVIEW_MATRIX))
+        viewport = glGetInteger(GL_VIEWPORT)
+        
+        # For some reason, the projection matrix only works if the FOV (defined in gluPerspective) is 90
+        # which corresponds to 0,0 and 1,1 being 1.0 in the matrix.
+        # But that looks crap for the actual projection of the 3D stuff so I guess I'm missing a step
+        # or doing something wrong here but as a hack, just change them here and it seems to work.
+        projection[0,0] = 1.0
+        projection[1,1] = 1.0
+        
+        p1_4d = np.reshape(np.array([p1[0], p1[1], p1[2], 1.0]), (4,1))
+        p2_4d = np.reshape(np.array([p2[0], p2[1], p2[2], 1.0]), (4,1))
+        
+        p1_screen = np.matmul(projection, np.matmul(model,p1_4d))
+        p2_screen = np.matmul(projection, np.matmul(model,p2_4d))
+        
+        glLineWidth(thickness)
+        glBegin(GL_LINES)
+        glColor4fv(col)
+        glVertex2f(p1_screen[0,0], p1_screen[1,0])
+        glVertex2f(p2_screen[0,0], p2_screen[1,0])
+        glEnd()
 
     def setupVisualiser(self, display_size=(800,800)):
         pygame.init()
@@ -113,7 +145,7 @@ class Visualiser:
         
         glEnable(GL_BLEND)
         glTranslatef(0.0,0.0,-2)
-        glRotatef(0, 0, 0, 0)
+        #glRotatef(0, 0, 0, 0)
 
     def beginRendering(self):
         if self.closed:
@@ -181,8 +213,8 @@ class Visualiser:
         new_eye_y = self.eye_dist * np.sin(self.eye_x_angle)
         new_eye_z = self.eye_dist * np.cos(self.eye_y_angle)
         
-        if self.use_perspective:
-            gluLookAt(new_eye_x, new_eye_y, new_eye_z, 0, 0, 0, 0, 1, 0)
+        #if self.use_perspective:
+            #gluLookAt(new_eye_x, new_eye_y, new_eye_z, 0, 0, 0, 0, 0.5, 0)
         
         if self.closed:
             return False
