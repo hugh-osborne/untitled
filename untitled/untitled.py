@@ -1,12 +1,16 @@
 import numpy as np
 from visualiser import Visualiser
+import sympy as sm
+import sympy.physics.mechanics as me
+
+
 
 class Object:
-    def __init__(self, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, com_world=np.zeros((3,1)), name="bone", mass=1.0):
+    def __init__(self, com_world=np.zeros((3,1)), name="bone", mass=1.0):
         self.name = name
         self.mass = mass
-        self.local_I = np.matrix([[I_xx, -I_xy, -I_xz],[-I_xy, I_yy, -I_yz],[-I_xz, -I_yz, I_zz]]) # Inertia Matrix
-        self.local_I_i = np.linalg.inv(self.local_I) # Inverse Inertia Matrix
+        self.local_I = np.identity(3)
+        self.local_I_i =  np.identity(3)
         self.x = com_world # world position of the centre of mass
         self.q = np.zeros((4,1)) # orientation quaternion - assuming index 0 is the real part then i,j,k
         self.q[0,0] = 1
@@ -24,7 +28,15 @@ class Object:
         # Linear forces impart no spin and act through the centre of mass (like gravity)
         # so are defined only with a force vector
         self.linear_forces = []
-        
+
+    @classmethod
+    def buildObjectFromInertiaMatrix(cls, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, referenceFrame, com_world=np.zeros((3,1)), name="bone", mass=1.0):
+        new_object = cls(com_world, name, mass)
+        new_object.local_I = np.matrix([[I_xx, -I_xy, -I_xz],[-I_xy, I_yy, -I_yz],[-I_xz, -I_yz, I_zz]]) # Inertia Matrix
+        new_object.local_I_i = np.linalg.inv(new_object.local_I) # Inverse Inertia Matrix
+        return new_object
+    
+
     def addForce(self, force, contact):
         self.forces += [(force, contact)]
         
