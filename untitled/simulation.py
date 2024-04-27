@@ -127,9 +127,8 @@ p =  sm.Matrix([g, kt])
 eval_eom = sm.lambdify((q, u, m, p), [Mk, gk, Md, gd])
 
 # get reference frames
-print(A.x,B)
-get_frame_A = sm.lambdify((q1), A.dcm(N))
-print(get_frame_A(0.2))
+get_A = sm.lambdify((q1), A.dcm(N))
+get_B = sm.lambdify((q1,q2), B.dcm(N))
 
 # Initialise the inputs with starting values
 q_vals = np.array([
@@ -169,9 +168,32 @@ ud_vals = np.linalg.solve(-Md_vals, np.squeeze(gd_vals))
 vis = Visualiser()
 vis.setupVisualiser()
 
+# initial state: q1, q2, u1,u2
+state = [25.0, 5.0, 0.0, 0.0]
+
 for i in range(1000):
+
+    q_vals = np.array([
+        np.deg2rad(state[0]),  # q1, rad
+        np.deg2rad(state[1]),  # q2, rad
+    ])
+
+    u_vals = np.array([
+        state[2],  # u1, rad/s
+        state[3],  # u2, rad/s
+    ])
+    
+    Mk_vals, gk_vals, Md_vals, gd_vals = eval_eom(q_vals, u_vals, m_vals, p_vals)
+    qd_vals = np.linalg.solve(-Mk_vals, np.squeeze(gk_vals))
+    ud_vals = np.linalg.solve(-Md_vals, np.squeeze(gd_vals))
+    
+    state[0] += 0.01 * (qd_vals[0])
+    state[1] += 0.01 * (qd_vals[1])
+    state[2] += 0.01 * (ud_vals[0])
+    state[3] += 0.01 * (ud_vals[1])
+    
     vis.beginRendering()
-    vis.drawLine(self.local2world(self.parent_pivot), self.x[:,0])
-    vis.drawCube(matrix=self.getMatrix(), model_pos=self.parent_pivot, scale=0.02, col=(1,0,0,1))
-    vis.drawCube(matrix=self.getMatrix(), scale=0.02, col=(1,0,0,1))
+    vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(get_A(state[0]),np.array([0.0,1.0,0.0])))
+    vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_A(state[0]),np.array([0.0,0.0,0.0])), scale=0.02, col=(1,0,0,1))
+    vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_B(state[0],state[1]),np.array([0.0,0.0,0.0])), scale=0.02, col=(1,0,0,1))
     vis.endRendering()
