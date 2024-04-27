@@ -126,6 +126,11 @@ m =  sm.Matrix([m_a,m_b])
 p =  sm.Matrix([g, kt])
 eval_eom = sm.lambdify((q, u, m, p), [Mk, gk, Md, gd])
 
+# get reference frames
+print(A.x,B)
+get_frame_A = sm.lambdify((q1), A.dcm(N))
+print(get_frame_A(0.2))
+
 # Initialise the inputs with starting values
 q_vals = np.array([
     np.deg2rad(25.0),  # q1, rad
@@ -165,8 +170,8 @@ vis = Visualiser()
 vis.setupVisualiser()
 
 for i in range(1000):
-    bone.forces = []
     vis.beginRendering()
-    ground.draw(vis)
-    bone.draw(vis)
+    vis.drawLine(self.local2world(self.parent_pivot), self.x[:,0])
+    vis.drawCube(matrix=self.getMatrix(), model_pos=self.parent_pivot, scale=0.02, col=(1,0,0,1))
+    vis.drawCube(matrix=self.getMatrix(), scale=0.02, col=(1,0,0,1))
     vis.endRendering()
