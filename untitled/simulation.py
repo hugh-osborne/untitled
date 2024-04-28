@@ -63,8 +63,8 @@ R_Bo = m_b*g*N.x
 
 # Spring Forces
 kt = sm.symbols('k_t')
-T_A = -kt*q1*N.z + kt*q2*A.x
-T_B = -kt*q2*A.x
+T_A = -kt*N.z
+T_B = -kt*A.x
 
 Fr_bar = [] # This defines the total "Partial forces" (Generalised Active Forces) for each object: the force component of each angular speed
 Frs_bar = [] # This defines the time-derivative solutions to the partial forces (Generalised Inertia Forces) for each object in terms of the mass, acceleration, inertia, etc.
@@ -148,7 +148,7 @@ m_vals = np.array([
 
 p_vals = np.array([
      9.81,  # g, m/s**2
-     0.01, # kt, Nm/rad
+     0.0, # kt, Nm/rad
 ])
 
 # Now find the initial mass matrix components
@@ -193,7 +193,7 @@ for i in range(1000):
     state[3] += 0.01 * (ud_vals[1])
     
     vis.beginRendering()
-    vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(get_A(state[0]),np.array([0.0,1.0,0.0])))
+    vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(get_A(state[0]),np.array([0.0,-1.0,0.0])))
     vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_A(state[0]),np.array([0.0,0.0,0.0])), scale=0.02, col=(1,0,0,1))
     vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_B(state[0],state[1]),np.array([0.0,0.0,0.0])), scale=0.02, col=(1,0,0,1))
     vis.endRendering()
