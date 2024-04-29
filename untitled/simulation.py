@@ -9,6 +9,8 @@ import sympy.physics.mechanics as me
 import numpy as np
 from visualiser import Visualiser
 
+
+
 # Global variables
 g = sm.symbols('g')
 N = me.ReferenceFrame('N')
@@ -48,7 +50,7 @@ B.set_ang_vel(A, u2*A.x) # B's reference frame has angular velocity u2 around A.
 
 Bo = me.Point('B_O') # B centre of mass
 Bo.set_pos(O, A.x) # Set the location of the com in relation to the origin
-
+print(Bo.pos_from(O).to_matrix(N))
 I = m_b**2/12
 I_B_Bo = I*me.outer(B.x, B.x) + I*me.outer(B.z, B.z) # Inertia of B 
 
@@ -192,8 +194,9 @@ for i in range(1000):
     state[2] += 0.01 * (ud_vals[0])
     state[3] += 0.01 * (ud_vals[1])
     
+    
     vis.beginRendering()
     vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(get_A(state[0]),np.array([0.0,-1.0,0.0])))
-    vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_A(state[0]),np.array([0.0,0.0,0.0])), scale=0.02, col=(1,0,0,1))
-    vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_B(state[0],state[1]),np.array([0.0,0.0,0.0])), scale=0.02, col=(1,0,0,1))
+    vis.drawCube(matrix=np.identity(4), model_pos=np.array([0.0,0.0,0.0]), scale=0.02, col=(1,0,0,1))
+    vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(get_A(state[0]),np.array([0.0,-1.0,0.0])), scale=0.02, col=(1,0,0,1))
     vis.endRendering()
