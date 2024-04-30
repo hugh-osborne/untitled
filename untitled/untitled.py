@@ -16,18 +16,22 @@ class Object:
 
         self.mass = sm.symbols('m_' + name) # mass
         self.q0 = me.dynamicsymbols('q0_' + name) # orientation quaternion
-        self.q1 = me.dynamicsymbols('q1_' + name) # orientation quaternion
-        self.q2 = me.dynamicsymbols('q2_' + name) # orientation quaternion
-        self.q3 = me.dynamicsymbols('q3_' + name) # orientation quaternion
+        self.q1 = me.dynamicsymbols('q1_' + name) # 
+        self.q2 = me.dynamicsymbols('q2_' + name) # 
+        self.q3 = me.dynamicsymbols('q3_' + name) # 
         self.u0 = me.dynamicsymbols('u0_' + name) # q prime
-        self.u1 = me.dynamicsymbols('u1_' + name) # q prime
-        self.u2 = me.dynamicsymbols('u2_' + name) # q prime
+        self.u1 = me.dynamicsymbols('u1_' + name) # 
+        self.u2 = me.dynamicsymbols('u2_' + name) #
 
         self.frame = me.ReferenceFrame('F_' + name) # reference frame
         self.frame.orient_quaternion(self.N, (self.q0,self.q1,self.q2,self.q3)) # Reference frame is rotated according to quaternion q
         self.frame.set_ang_vel(self.N, self.u0*self.N.x + self.u1*self.N.y + self.u2*self.N.z) # Reference frame has angular velocity u
 
         self.com = com # centre of mass
+        self.v0 = me.dynamicsymbols('v0_' + name) # velocity
+        self.v1 = me.dynamicsymbols('v1_' + name) # 
+        self.v2 = me.dynamicsymbols('v2_' + name) # 
+        self.com.set_vel(self.N, self.v1*self.frame.x + self.v2*self.frame.y + self.v3*self.frame.z)
         #self.c.set_pos(O, 0.5*A.x) # Set the location of the com in relation to the origin
 
         # Inertia matrix
@@ -41,15 +45,21 @@ class Object:
         self.I = me.inertia(self.frameB, self.Ixx, self.Iyy, self.Izz, self.Ixy, self.Iyz, self.Ixz)
         
     def getFrFrsFromForce(self, force):
-        v_com_0 = self.com.vel(self.N).diff(self.u0, self.N, var_in_dcm=False)
-        v_com_1 = self.com.vel(self.N).diff(self.u1, self.N, var_in_dcm=False)
-        v_com_2 = self.com.vel(self.N).diff(self.u2, self.N, var_in_dcm=False)
+        v_com_0 = self.com.vel(self.N).diff(self.v0, self.N, var_in_dcm=False)
+        v_com_1 = self.com.vel(self.N).diff(self.v1, self.N, var_in_dcm=False)
+        v_com_2 = self.com.vel(self.N).diff(self.v2, self.N, var_in_dcm=False)
+        v_com_3 = self.com.vel(self.N).diff(self.u0, self.N, var_in_dcm=False)
+        v_com_4 = self.com.vel(self.N).diff(self.u1, self.N, var_in_dcm=False)
+        v_com_5 = self.com.vel(self.N).diff(self.u2, self.N, var_in_dcm=False)
         
         F1 = v_com_0.dot(force)
         F2 = v_com_1.dot(force)
         F3 = v_com_2.dot(force)
+        F4 = v_com_3.dot(force)
+        F5 = v_com_4.dot(force)
+        F6 = v_com_5.dot(force)
         
-        Fr = sm.Matrix([F1, F2, F3])
+        Fr = [F1, F2, F3, F4, F5, F6]
         
         Rs = -self.mass*self.com.acc(self.N)
         Ts = -(self.frame.ang_acc_in(self.N).dot(self.I) + me.cross(self.frame.ang_vel_in(self.N), self.I).dot(self.frame.ang_vel_in(self.N)))
@@ -57,21 +67,30 @@ class Object:
         F1s = v_com_0.dot(Rs)
         F2s = v_com_1.dot(Rs)
         F3s = v_com_2.dot(Rs)
+        F4s = v_com_3.dot(Rs)
+        F5s = v_com_4.dot(Rs)
+        F6s = v_com_5.dot(Rs)
         
-        Frs = sm.Matrix([F1s, F2s, F3s])
+        Frs = [F1s, F2s, F3s, F4s, F5s, F6s]
         
         return Fr, Frs
 
     def getFrFrsFromTorque(self, torque):
-        w_com_0 = self.com.ang_vel_in(self.N).diff(self.u0, self.N, var_in_dcm=False)
-        w_com_1 = self.com.ang_vel_in(self.N).diff(self.u1, self.N, var_in_dcm=False)
-        w_com_2 = self.com.ang_vel_in(self.N).diff(self.u2, self.N, var_in_dcm=False)
+        w_com_0 = self.com.ang_vel_in(self.N).diff(self.v0, self.N, var_in_dcm=False)
+        w_com_1 = self.com.ang_vel_in(self.N).diff(self.v1, self.N, var_in_dcm=False)
+        w_com_2 = self.com.ang_vel_in(self.N).diff(self.v2, self.N, var_in_dcm=False)
+        w_com_3 = self.com.ang_vel_in(self.N).diff(self.u0, self.N, var_in_dcm=False)
+        w_com_4 = self.com.ang_vel_in(self.N).diff(self.u1, self.N, var_in_dcm=False)
+        w_com_5 = self.com.ang_vel_in(self.N).diff(self.u2, self.N, var_in_dcm=False)
         
         F1 = w_com_0.dot(torque)
         F2 = w_com_1.dot(torque)
         F3 = w_com_2.dot(torque)
+        F4 = w_com_3.dot(torque)
+        F5 = w_com_4.dot(torque)
+        F6 = w_com_5.dot(torque)
         
-        Fr = sm.Matrix([F1, F2, F3])
+        Fr = [F1, F2, F3, F4, F5, F6]
         
         Rs = -self.mass*self.com.acc(self.N)
         Ts = -(self.frame.ang_acc_in(self.N).dot(self.I) + me.cross(self.frame.ang_vel_in(self.N), self.I).dot(self.frame.ang_vel_in(self.N)))
@@ -79,8 +98,11 @@ class Object:
         F1s = w_com_0.dot(Ts)
         F2s = w_com_1.dot(Ts)
         F3s = w_com_2.dot(Ts)
+        F4s = w_com_3.dot(Ts)
+        F5s = w_com_4.dot(Ts)
+        F6s = w_com_5.dot(Ts)
         
-        Frs = sm.Matrix([F1s, F2s, F3s])
+        Frs = [F1s, F2s, F3s, F4s, F5s, F6s]
         
         return Fr, Frs
 
@@ -152,22 +174,21 @@ class Model:
 
         # Now we loop through each object and get its angular speed
         for obj in self.objects:
-            ui = obj.u
-            Fr = [0,0,0]
-            Frs = [0,0,0]
+            Fr = [0,0,0,0,0,0]
+            Frs = [0,0,0,0,0,0]
             # The angular speed of each object is dependent on the forces applied to all connected objects
             # First, deal with the active forces (that move the centre of mass without rotation)
             for force_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
                 for force in force_obj.forces:
                     fr, frs = force_obj.getFrFrsFromForce(force)
-                    Fr = [Fr[i] + fr[i] for i in range(3)]
-                    Frs = [Frs[i] + frs[i] for i in range(3)]
+                    Fr = [Fr[i] + fr[i] for i in range(6)]
+                    Frs = [Frs[i] + frs[i] for i in range(6)]
             
             for torque_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
                 for torque in torque_obj.torques:
                     fr, frs = torque_obj.getFrFrsFromTorque(torque)
-                    Fr = [Fr[i] + fr[i] for i in range(3)]
-                    Frs = [Frs[i] + frs[i] for i in range(3)]
+                    Fr = [Fr[i] + fr[i] for i in range(6)]
+                    Frs = [Frs[i] + frs[i] for i in range(6)]
         
             Fr_bar.append(Fr)
             Frs_bar.append(Frs)
