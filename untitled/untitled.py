@@ -40,26 +40,45 @@ class Object:
         
         self.I = me.inertia(self.frameB, self.Ixx, self.Iyy, self.Izz, self.Ixy, self.Iyz, self.Ixz)
         
-    def getFrFrs(self, force, torque):
+    def getFrFrsFromForce(self, force):
         v_com_0 = self.com.vel(self.N).diff(self.u0, self.N, var_in_dcm=False)
         v_com_1 = self.com.vel(self.N).diff(self.u1, self.N, var_in_dcm=False)
         v_com_2 = self.com.vel(self.N).diff(self.u2, self.N, var_in_dcm=False)
-        w_com_0 = self.com.ang_vel_in(self.N).diff(self.u0, self.N, var_in_dcm=False)
-        w_com_1 = self.com.ang_vel_in(self.N).diff(self.u1, self.N, var_in_dcm=False)
-        w_com_2 = self.com.ang_vel_in(self.N).diff(self.u2, self.N, var_in_dcm=False)
         
-        F1 = v_com_0.dot(force) + w_com_0.dot(torque)
-        F2 = v_com_1.dot(force) + w_com_1.dot(torque)
-        F3 = v_com_2.dot(force) + w_com_2.dot(torque)
+        F1 = v_com_0.dot(force)
+        F2 = v_com_1.dot(force)
+        F3 = v_com_2.dot(force)
         
         Fr = sm.Matrix([F1, F2, F3])
         
         Rs = -self.mass*self.com.acc(self.N)
         Ts = -(self.frame.ang_acc_in(self.N).dot(self.I) + me.cross(self.frame.ang_vel_in(self.N), self.I).dot(self.frame.ang_vel_in(self.N)))
 
-        F1s = v_com_0.dot(Rs) + w_com_0.dot(Ts)
-        F2s = v_com_1.dot(Rs) + w_com_1.dot(Ts)
-        F3s = v_com_2.dot(Rs) + w_com_2.dot(Ts)
+        F1s = v_com_0.dot(Rs)
+        F2s = v_com_1.dot(Rs)
+        F3s = v_com_2.dot(Rs)
+        
+        Frs = sm.Matrix([F1s, F2s, F3s])
+        
+        return Fr, Frs
+
+    def getFrFrsFromTorque(self, torque):
+        w_com_0 = self.com.ang_vel_in(self.N).diff(self.u0, self.N, var_in_dcm=False)
+        w_com_1 = self.com.ang_vel_in(self.N).diff(self.u1, self.N, var_in_dcm=False)
+        w_com_2 = self.com.ang_vel_in(self.N).diff(self.u2, self.N, var_in_dcm=False)
+        
+        F1 = w_com_0.dot(torque)
+        F2 = w_com_1.dot(torque)
+        F3 = w_com_2.dot(torque)
+        
+        Fr = sm.Matrix([F1, F2, F3])
+        
+        Rs = -self.mass*self.com.acc(self.N)
+        Ts = -(self.frame.ang_acc_in(self.N).dot(self.I) + me.cross(self.frame.ang_vel_in(self.N), self.I).dot(self.frame.ang_vel_in(self.N)))
+
+        F1s = w_com_0.dot(Ts)
+        F2s = w_com_1.dot(Ts)
+        F3s = w_com_2.dot(Ts)
         
         Frs = sm.Matrix([F1s, F2s, F3s])
         
@@ -140,27 +159,11 @@ class Model:
             # First, deal with the active forces (that move the centre of mass without rotation)
             for force_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
                 for force in force_obj.forces:
-                    Pi = force_obj.com
-                    Ri = force
-                    mi = force_obj.mass
-                    N = self.referenceFrame
-                
-                    vr = Pi.vel(N).diff(ui, N)
-                    Fr += vr.dot(Ri)
-                    Rs = -mi*Pi.acc(N)
-                    Frs += vr.dot(Rs)
+                    force_obj.getFrFrsFromForce(force)
             
             for torque_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
                 for torque in torque_obj.torques:
-                    Bi = torque_obj.referenceFrame
-                    Ti = torque
-                    Ii = torque_obj.I
-               
-                    wr = Bi.ang_vel_in(N).diff(ui, N)
-                    Fr += wr.dot(Ti)
-                    Ts = -(Bi.ang_acc_in(N).dot(Ii) +
-                           me.cross(Bi.ang_vel_in(N), Ii).dot(Bi.ang_vel_in(N)))
-                    Frs += wr.dot(Ts)
+                    torque_obj.getFrFrsFromTorque(torque)
         
             Fr_bar.append(Fr)
             Frs_bar.append(Frs)
