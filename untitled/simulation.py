@@ -23,12 +23,15 @@ O.set_vel(N, 0) # lock the origin by setting the vel to zero (required for v2pt_
 
 # object A
 m_a = sm.symbols('m_a') # mass
-q1 = me.dynamicsymbols('q1') # angle from the vertical in N <- This must be more general
-u1 = me.dynamicsymbols('u1') # q1 prime
+a_q0,a_q1,a_q2,a_q3 = me.dynamicsymbols('a_q0, a_q1, a_q2, a_q3') # angle from the vertical in N <- This must be more general
+a_u0,a_u1,a_u2 = me.dynamicsymbols('a_u0, a_u1, a_u2') # q1 prime
+
+q1 = (a_q0,a_q1,a_q2,a_q3)
+u1 = a_u0*N.x + a_u1*N.y + a_u2*N.z
 
 A = me.ReferenceFrame('A')
-A.orient_axis(N, q1, N.z) # A's reference frame is rotated through angle q1 around N.z <- This should be more general
-A.set_ang_vel(N, u1*N.z) # A's reference frame has angular velocity u1 around N.z
+A.orient_quaternion(N, q1) # A's reference frame is rotated through angle q1 around N.z <- This should be more general
+A.set_ang_vel(N, u1) # A's reference frame has angular velocity u1 around N.z
 
 Ao = me.Point('A_O') # A centre of mass
 Ao.set_pos(O, 0.5*A.x) # Set the location of the com in relation to the origin
@@ -44,9 +47,15 @@ m_b = sm.symbols('m_b')
 q2 = me.dynamicsymbols('q2') # angle from the horizontal in A
 u2  = me.dynamicsymbols('u2') # q2 prime
 
+b_q0,b_q1,b_q2,b_q3 = me.dynamicsymbols('b_q0, b_q1, b_q2, b_q3') # angle from the vertical in N <- This must be more general
+b_u0,b_u1,b_u2 = me.dynamicsymbols('b_u0, b_u1, b_u2') # q1 prime
+
+q2 = (b_q0,b_q1,b_q2,b_q3)
+u2 = b_u0*N.x + b_u1*N.y + b_u2*N.z
+
 B = me.ReferenceFrame('B')
-B.orient_axis(A, q2, A.x) # B's reference frame is rotated through angle q2 around A.x
-B.set_ang_vel(A, u2*A.x) # B's reference frame has angular velocity u2 around A.x
+B.orient_quaternion(A, q2) # B's reference frame is rotated through angle q2 around A.x
+B.set_ang_vel(A, u2) # B's reference frame has angular velocity u2 around A.x
 
 Bo = me.Point('B_O') # B centre of mass
 Bo.set_pos(O, A.x) # Set the location of the com in relation to the origin
@@ -82,7 +91,10 @@ for ui in [u1, u2]:
     # The angular speed of each object is dependent on the forces applied to all connected objects
     # First, deal with the active forces (that move the centre of mass without rotation)
     for Pi, Ri, mi in zip([Ao, Bo], [R_Ao, R_Bo], [m_a, m_b]):
-        vr = Pi.vel(N).diff(ui, N)
+        print(Pi.vel(N))
+        vr = me.partial_velocity([Pi.vel(N)], [a_u0,a_u1,a_u2], N)
+        print(vr.simplify())
+        #vr = Pi.vel(N).diff(ui, N)
         Fr += vr.dot(Ri)
         Rs = -mi*Pi.acc(N)
         Frs += vr.dot(Rs)
@@ -171,13 +183,13 @@ vis = Visualiser()
 vis.setupVisualiser()
 
 # initial state: q1, q2, u1,u2
-state = [25.0, 5.0, 0.0, 0.0]
+state = [np.deg2rad(25.0), np.deg2rad(5.0), 0.0, 0.0]
 
 for i in range(1000):
 
     q_vals = np.array([
-        np.deg2rad(state[0]),  # q1, rad
-        np.deg2rad(state[1]),  # q2, rad
+        state[0],  # q1, rad
+        state[1],  # q2, rad
     ])
 
     u_vals = np.array([
