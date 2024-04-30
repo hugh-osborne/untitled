@@ -153,17 +153,21 @@ class Model:
         # Now we loop through each object and get its angular speed
         for obj in self.objects:
             ui = obj.u
-            Fr = 0
-            Frs = 0
+            Fr = [0,0,0]
+            Frs = [0,0,0]
             # The angular speed of each object is dependent on the forces applied to all connected objects
             # First, deal with the active forces (that move the centre of mass without rotation)
             for force_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
                 for force in force_obj.forces:
-                    force_obj.getFrFrsFromForce(force)
+                    fr, frs = force_obj.getFrFrsFromForce(force)
+                    Fr = [Fr[i] + fr[i] for i in range(3)]
+                    Frs = [Frs[i] + frs[i] for i in range(3)]
             
             for torque_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
                 for torque in torque_obj.torques:
-                    torque_obj.getFrFrsFromTorque(torque)
+                    fr, frs = torque_obj.getFrFrsFromTorque(torque)
+                    Fr = [Fr[i] + fr[i] for i in range(3)]
+                    Frs = [Frs[i] + frs[i] for i in range(3)]
         
             Fr_bar.append(Fr)
             Frs_bar.append(Frs)
