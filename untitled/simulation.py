@@ -92,9 +92,7 @@ for ui in [u1, u2]:
     # First, deal with the active forces (that move the centre of mass without rotation)
     for Pi, Ri, mi in zip([Ao, Bo], [R_Ao, R_Bo], [m_a, m_b]):
         print(Pi.vel(N))
-        vr = me.partial_velocity([Pi.vel(N)], [a_u0,a_u1,a_u2], N)
-        print(vr.simplify())
-        #vr = Pi.vel(N).diff(ui, N)
+        vr = Pi.vel(N).diff(ui, N)
         Fr += vr.dot(Ri)
         Rs = -mi*Pi.acc(N)
         Frs += vr.dot(Rs)
@@ -133,6 +131,8 @@ gk = u
 # Initialise Md (dynamics) - For forward kinematics, we know the component forces and time derivatives 
 Md = Frs.jacobian(ud)
 gd = Frs.xreplace(ud_zerod) + Fr
+
+print(Mk, gk, Md, gd)
 
 # Now we define a function that evaluates the equations of motion (eom) - returning the calculated Mk, gk, Md, and gd
 # The function takes the current orientations or the objects, the current angular speeds, masses, g
@@ -205,7 +205,6 @@ for i in range(1000):
     state[1] += 0.01 * (qd_vals[1])
     state[2] += 0.01 * (ud_vals[0])
     state[3] += 0.01 * (ud_vals[1])
-    
     
     vis.beginRendering()
     vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(get_A(state[0]),np.array([0.0,-1.0,0.0])))

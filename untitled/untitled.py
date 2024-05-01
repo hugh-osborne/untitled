@@ -4,35 +4,47 @@ import sympy as sm
 import sympy.physics.mechanics as me
 
 class Object:
-    def __init__(self, com=np.zeros(3), sym_parentFrame=None, name="bone", mass=1.0):
+    def __init__(self, sym_parentOrigin, sym_parentFrame, name="bone", mass=1.0, inertia=np.identity(3)):
         self.name = name
         
         self.forces = []
         self.torques = []
         
+        self.state_mass = mass
+        self.state_inertia = inertia
+        self.state_orientation = np.zeros(3) # This will be r1,r2,r3
+        self.state_ang_vel = np.zeros(3) # This will be u0,u1,u2
+        self.state_vel = np.zeros(3) # This will be v0,v1,v2
+        self.state_com = np.zeros(3) # This will be q0,q1,q2
+        
         # symbols
         self.parentFrame = sym_parentFrame
+        self.parentOrigin = sym_parentOrigin
         self.N = self.parentFrame
+        self.O = self.parentOrigin
 
         self.mass = sm.symbols('m_' + name) # mass
-        self.q0 = me.dynamicsymbols('q0_' + name) # orientation quaternion
-        self.q1 = me.dynamicsymbols('q1_' + name) # 
-        self.q2 = me.dynamicsymbols('q2_' + name) # 
-        self.q3 = me.dynamicsymbols('q3_' + name) # 
-        self.u0 = me.dynamicsymbols('u0_' + name) # q prime
+        
+        self.frame = me.ReferenceFrame('F_' + name) # reference frame
+        self.r0 = me.dynamicsymbols('r0_' + name) # orientation quaternion
+        self.r1 = me.dynamicsymbols('r1_' + name) # 
+        self.r2 = me.dynamicsymbols('r2_' + name) # 
+        self.r3 = me.dynamicsymbols('r3_' + name) # 
+        self.frame.orient_quaternion(self.N, (1.0,self.r1,self.r2,self.r3) ) # Reference frame is rotated
+        self.u0 = me.dynamicsymbols('u0_' + name) # angular velocity
         self.u1 = me.dynamicsymbols('u1_' + name) # 
         self.u2 = me.dynamicsymbols('u2_' + name) #
-
-        self.frame = me.ReferenceFrame('F_' + name) # reference frame
-        self.frame.orient_quaternion(self.N, (self.q0,self.q1,self.q2,self.q3)) # Reference frame is rotated according to quaternion q
         self.frame.set_ang_vel(self.N, self.u0*self.N.x + self.u1*self.N.y + self.u2*self.N.z) # Reference frame has angular velocity u
-
-        self.com = com # centre of mass
+        
+        self.com = me.Point('com_' + name) # centre of mass
+        self.q0 = me.dynamicsymbols('q0_' + name) # com position in world coords
+        self.q1 = me.dynamicsymbols('q1_' + name) #
+        self.q2 = me.dynamicsymbols('q2_' + name) #
+        self.com.set_pos(self.O, self.q0*self.frame.x + self.q1*self.frame.y + self.q2*self.frame.z) 
         self.v0 = me.dynamicsymbols('v0_' + name) # velocity
         self.v1 = me.dynamicsymbols('v1_' + name) # 
         self.v2 = me.dynamicsymbols('v2_' + name) # 
-        self.com.set_vel(self.N, self.v1*self.frame.x + self.v2*self.frame.y + self.v3*self.frame.z)
-        #self.c.set_pos(O, 0.5*A.x) # Set the location of the com in relation to the origin
+        self.com.set_vel(self.N, self.v0*self.frame.x + self.v1*self.frame.y + self.v2*self.frame.z)
 
         # Inertia matrix
         self.Ixx = sm.symbols('I_xx_' + name)
@@ -42,7 +54,10 @@ class Object:
         self.Iyz = sm.symbols('I_yz_' + name)
         self.Ixz = sm.symbols('I_xz_' + name)
         
-        self.I = me.inertia(self.frameB, self.Ixx, self.Iyy, self.Izz, self.Ixy, self.Iyz, self.Ixz)
+        self.I = me.inertia(self.frame, self.Ixx, self.Iyy, self.Izz, self.Ixy, self.Iyz, self.Ixz)
+        
+        # symbol functions
+        self.get_A = sm.lambdify((self.r0, self.r1, self.r2, self.r3), self.frame.dcm(self.N))
         
     def getFrFrsFromForce(self, force):
         v_com_0 = self.com.vel(self.N).diff(self.v0, self.N, var_in_dcm=False)
@@ -76,12 +91,12 @@ class Object:
         return Fr, Frs
 
     def getFrFrsFromTorque(self, torque):
-        w_com_0 = self.com.ang_vel_in(self.N).diff(self.v0, self.N, var_in_dcm=False)
-        w_com_1 = self.com.ang_vel_in(self.N).diff(self.v1, self.N, var_in_dcm=False)
-        w_com_2 = self.com.ang_vel_in(self.N).diff(self.v2, self.N, var_in_dcm=False)
-        w_com_3 = self.com.ang_vel_in(self.N).diff(self.u0, self.N, var_in_dcm=False)
-        w_com_4 = self.com.ang_vel_in(self.N).diff(self.u1, self.N, var_in_dcm=False)
-        w_com_5 = self.com.ang_vel_in(self.N).diff(self.u2, self.N, var_in_dcm=False)
+        w_com_0 = self.frame.ang_vel_in(self.N).diff(self.v0, self.N, var_in_dcm=False)
+        w_com_1 = self.frame.ang_vel_in(self.N).diff(self.v1, self.N, var_in_dcm=False)
+        w_com_2 = self.frame.ang_vel_in(self.N).diff(self.v2, self.N, var_in_dcm=False)
+        w_com_3 = self.frame.ang_vel_in(self.N).diff(self.u0, self.N, var_in_dcm=False)
+        w_com_4 = self.frame.ang_vel_in(self.N).diff(self.u1, self.N, var_in_dcm=False)
+        w_com_5 = self.frame.ang_vel_in(self.N).diff(self.u2, self.N, var_in_dcm=False)
         
         F1 = w_com_0.dot(torque)
         F2 = w_com_1.dot(torque)
@@ -106,6 +121,26 @@ class Object:
         
         return Fr, Frs
 
+    def setStateMass(self, m):
+        self.state_mass = m
+        
+    def setStateOrientation(self, r):
+        self.state_orientation = r
+        
+    def setStateCom(self, c):
+        self.state_com = c
+        
+    def updateState(self, qd, ud, dt):
+        self.state_orientation += dt * qd[3:] # This will be r1,r2,r3
+        self.state_ang_vel += dt * ud[3:] # This will be u0,u1,u2
+        self.state_vel += dt * ud[:3] # This will be v0,v1,v2
+        self.state_com += dt * qd[:3] # This will be q0,q1,q2
+        
+    def draw(self, vis):
+        vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(self.get_A(1.0,self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),np.array([0.0,-1.0,0.0])))
+        vis.drawCube(matrix=np.identity(4), model_pos=np.array([0.0,0.0,0.0]), scale=0.02, col=(1,0,0,1))
+        vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(self.get_A(1.0,self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),np.array([0.0,-1.0,0.0])), scale=0.02, col=(1,0,0,1))
+
     # @classmethod
     # def buildObjectFromInertiaMatrix(cls, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, referenceFrame=np.identity(3), com=np.zeros((3,1)), name="object", mass=1.0):
     #     new_object = cls(com, referenceFrame, name, mass)
@@ -125,7 +160,7 @@ class Bone(Object):
         self.parent = parent
         self.children = []
         
-    def draw(self, visualiser):
+    def draw(self, vis):
         if self.parent is not None:
             if self.child is not None: # we have a parent bone and a child bone so draw a line between the pivot points
                 vis.drawLine(self.local2world(self.parent_pivot), self.local2world(self.child_pivot))
@@ -140,7 +175,7 @@ class Bone(Object):
             vis.drawCube(matrix=self.getMatrix(), scale=0.02, col=(1,0,0,1))
         
 class Model:
-    def __init_(self):
+    def __init__(self):
         self.t = me.dynamicsymbols._t
         self.origin = me.Point('O')
         self.referenceFrame = me.ReferenceFrame('N')
@@ -173,18 +208,18 @@ class Model:
         # Fr = (u.R) + (w.T) = (-m*a.u) + (a.I + wxI.w) = Frs
 
         # Now we loop through each object and get its angular speed
-        for obj in self.objects:
+        for name, obj in self.objects.items():
             Fr = [0,0,0,0,0,0]
             Frs = [0,0,0,0,0,0]
             # The angular speed of each object is dependent on the forces applied to all connected objects
             # First, deal with the active forces (that move the centre of mass without rotation)
-            for force_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
+            for fname, force_obj in self.objects.items(): # can this be reduced so we're not getting forces for all objects?
                 for force in force_obj.forces:
                     fr, frs = force_obj.getFrFrsFromForce(force)
                     Fr = [Fr[i] + fr[i] for i in range(6)]
                     Frs = [Frs[i] + frs[i] for i in range(6)]
             
-            for torque_obj in self.objects: # can this be reduced so we're not getting forces for all objects?
+            for tname, torque_obj in self.objects.items(): # can this be reduced so we're not getting forces for all objects?
                 for torque in torque_obj.torques:
                     fr, frs = torque_obj.getFrFrsFromTorque(torque)
                     Fr = [Fr[i] + fr[i] for i in range(6)]
@@ -198,9 +233,10 @@ class Model:
         Frs = sm.Matrix(Frs_bar)
 
         # Put the orientation and angular speed into matrices
-        qs = sm.Matrix([o.q for o in self.objects])
-        us = sm.Matrix([o.u for o in self.objects])
-        ms = sm.Matrix([o.mass for o in self.objects])
+        Is = sm.Matrix([[self.objects[o].Ixx,self.objects[o].Iyy,self.objects[o].Izz,self.objects[o].Ixy,self.objects[o].Iyz,self.objects[o].Ixz] for o in self.objects])
+        qs = sm.Matrix([[self.objects[o].q0,self.objects[o].q1,self.objects[o].q2,self.objects[o].r1,self.objects[o].r2,self.objects[o].r3] for o in self.objects])
+        us = sm.Matrix([[self.objects[o].v0,self.objects[o].v1,self.objects[o].v2,self.objects[o].u0,self.objects[o].u1,self.objects[o].u2] for o in self.objects])
+        ms = sm.Matrix([self.objects[o].mass for o in self.objects])
 
         # Define the time differentials of orientation and angular speed
         self.qd = qs.diff(self.t)
@@ -210,35 +246,88 @@ class Model:
         ud_zerod = {udr: 0 for udr in self.ud}
 
         # This is the site of forward kinematics vs inverse kinematics
-        # Initialise Mk (kinematics) - For forward kinematics, we know the current speeds
-        self.Mk = -sm.eye(len(self.objects))
+        # Initialise Mk (kinematics) - For forward kinematics, we don't know the velocities but want to find them
+        self.Mk = -sm.eye(6)
         self.gk = us
 
         # Initialise Md (dynamics) - For forward kinematics, we know the component forces and time derivatives 
         self.Md = Frs.jacobian(self.ud)
         self.gd = Frs.xreplace(ud_zerod) + Fr
 
-        self.eval_eom = sm.lambdify((qs, us, ms), [self.Mk, self.gk, self.Md, self.gd])
+        # Now build the equations of motion function that will be applied each time step
+        self.eval_eom = sm.lambdify((qs, us, ms, Is), [self.Mk, self.gk, self.Md, self.gd])
         
+    def solve(self):
+        q_vals = []
+        u_vals = []
+        m_vals = []
+        i_vals = []
+        for name, obj in self.objects.items():
+            q_vals += [obj.state_com[0], obj.state_com[1], obj.state_com[2], obj.state_orientation[0], obj.state_orientation[1], obj.state_orientation[2]]
+            u_vals += [obj.state_vel[0], obj.state_vel[1], obj.state_vel[2], obj.state_ang_vel[0], obj.state_ang_vel[1], obj.state_ang_vel[2]]
+            m_vals += [obj.state_mass]
+            i_vals += [obj.state_inertia[0,0], obj.state_inertia[1,1], obj.state_inertia[2,2], obj.state_inertia[0,1], obj.state_inertia[1,2], obj.state_inertia[0,2]]
+            
+        q_vals = np.array(q_vals)
+        u_vals = np.array(u_vals)
+        m_vals = np.array(m_vals)
+        i_vals = np.array(i_vals)
+        
+        Mk_vals, gk_vals, Md_vals, gd_vals = self.eval_eom(q_vals, u_vals, m_vals, i_vals)
+
+        # Now the hard work must be done: find the speeds and accelerations from the
+        # system of equations defined by the mass matrix.
+
+        # calculate the angular speed - this apparently may not always equal u but I don't know why...
+        qd_vals = np.linalg.solve(-Mk_vals, np.squeeze(gk_vals))
+
+        # Now the angular acceleration
+        ud_vals = np.linalg.solve(-Md_vals, np.squeeze(gd_vals))
+        
+        return qd_vals, ud_vals
         
 
 class Muscle:
     def __init__(self):
         self.name = "muscle"
         
-        
-ground = Bone(1.0,1.0,1.0,0.0,0.0,0.0, com_world=np.reshape(np.array([0.0,0.5,0.0]), (3,1)))
-bone = Bone(0.0001,0.0001,0.0001,0,0,0, parent=ground, pivot_local=np.array([0.0,0.5,0.0]))
-bone.addLinearForce(np.transpose(np.array([[0.0,-9.8,0.0]])))
-bone.addForce(np.transpose(np.array([[0.0,0.5,0.0]])), np.transpose(np.array([[0.3,0.0,0.0]]))) # Add a force that acts upwards with 1N 0.3 across from the origin 
+
+gravity_constant = sm.symbols('g')
+groundFrame = me.ReferenceFrame('N')
+groundOrigin = me.Point('O')
+
+obj = Object(groundOrigin, groundFrame)
+obj.setStateOrientation(np.array([0.0,0.0,0.3]))
+obj.addForce(obj.mass*9.81*groundFrame.x)
+obj.addTorque(0.0*groundFrame.z)
+mod = Model()
+
+mod.addObject(obj)
+mod.setup()
 
 vis = Visualiser()
 vis.setupVisualiser()
 
 for i in range(1000):
-    bone.euler(0.001)
-    bone.forces = []
+    qd, ud = mod.solve()
+    obj.updateState(qd, ud, 0.01)
+
     vis.beginRendering()
-    ground.draw(vis)
-    bone.draw(vis)
+    obj.draw(vis)
     vis.endRendering()
+
+# ground = Bone(1.0,1.0,1.0,0.0,0.0,0.0, com_world=np.reshape(np.array([0.0,0.5,0.0]), (3,1)))
+# bone = Bone(0.0001,0.0001,0.0001,0,0,0, parent=ground, pivot_local=np.array([0.0,0.5,0.0]))
+# bone.addLinearForce(np.transpose(np.array([[0.0,-9.8,0.0]])))
+# bone.addForce(np.transpose(np.array([[0.0,0.5,0.0]])), np.transpose(np.array([[0.3,0.0,0.0]]))) # Add a force that acts upwards with 1N 0.3 across from the origin 
+
+# vis = Visualiser()
+# vis.setupVisualiser()
+
+# for i in range(1000):
+#     bone.euler(0.001)
+#     bone.forces = []
+#     vis.beginRendering()
+#     ground.draw(vis)
+#     bone.draw(vis)
+#     vis.endRendering()
