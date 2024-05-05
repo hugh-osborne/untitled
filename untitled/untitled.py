@@ -45,6 +45,8 @@ class Object:
         self.v1 = me.dynamicsymbols('v1_' + name) # 
         self.v2 = me.dynamicsymbols('v2_' + name) # 
         self.com.set_vel(self.N, self.v0*self.frame.x + self.v1*self.frame.y + self.v2*self.frame.z)
+        
+        #self.com.v2pt_theory(self.O, self.N, self.frame)
 
         # Inertia matrix
         self.Ixx = sm.symbols('I_xx_' + name)
@@ -137,9 +139,9 @@ class Object:
         self.state_com += dt * qd[:3] # This will be q0,q1,q2
         
     def draw(self, vis):
-        vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(self.get_A(1.0,self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),np.array([0.0,-1.0,0.0])))
+        vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(self.get_A(1.0,self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),self.state_com))
         vis.drawCube(matrix=np.identity(4), model_pos=np.array([0.0,0.0,0.0]), scale=0.02, col=(1,0,0,1))
-        vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(self.get_A(1.0,self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),np.array([0.0,-1.0,0.0])), scale=0.02, col=(1,0,0,1))
+        vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(self.get_A(1.0,self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),self.state_com), scale=0.02, col=(1,0,0,1))
 
     # @classmethod
     # def buildObjectFromInertiaMatrix(cls, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, referenceFrame=np.identity(3), com=np.zeros((3,1)), name="object", mass=1.0):
@@ -295,8 +297,10 @@ class Muscle:
 gravity_constant = sm.symbols('g')
 groundFrame = me.ReferenceFrame('N')
 groundOrigin = me.Point('O')
+groundOrigin.set_vel(groundFrame, 0) # lock the origin by setting the vel to zero (required for v2pt_theory later)
 
 obj = Object(groundOrigin, groundFrame)
+obj.setStateCom(np.array([0.0,-0.5,0.0]))
 obj.setStateOrientation(np.array([0.0,0.0,0.3]))
 obj.addForce(obj.mass*9.81*groundFrame.x)
 obj.addTorque(0.0*groundFrame.z)
