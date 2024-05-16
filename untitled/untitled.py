@@ -61,7 +61,9 @@ class Object:
         else:
             self.static_orientation += [sm.symbols('r3_' + name)]
             orientation += [self.static_orientation[-1]]
-        self.frame.orient_body_fixed(self.N, orientation, 'XYZ')
+        #self.frame.orient_body_fixed(self.N, (self.dynamic_orientation[0],0,self.dynamic_orientation[1]), 'XYZ')
+        self.frame.orient_axis(self.N, self.dynamic_orientation[0], self.N.z)  
+
         
         # Angular Velocity
         ang_vel = 0
@@ -105,7 +107,7 @@ class Object:
         else:
             self.static_position += [sm.symbols('q2_' + name)]
             com_pos += self.static_position[-1]*self.frame.z
-        self.com.set_pos(self.O, com_pos) 
+        self.com.set_pos(self.O, self.static_position[0]*self.frame.x + self.static_position[1]*self.frame.y + self.dynamic_position[0]*self.frame.z) 
 
         # Centre of mass velocity
         com_vel = 0
@@ -138,31 +140,34 @@ class Object:
         a_qd = a_q.diff(t)
         a_ud = a_u.diff(t)
 
-        if 'rot_x' not in self.dofs and 'rot_y' not in self.dofs and 'rot_z' not in self.dofs: 
-            N_w_A = self.frame.ang_vel_in(self.N)
-            N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
-            self.frame.set_ang_vel(self.N, N_w_A)
+        self.frame.set_ang_vel(self.N, self.dynamic_ang_vel[0]*self.N.z)
+        #if 'rot_x' not in self.dofs and 'rot_y' not in self.dofs and 'rot_z' not in self.dofs: 
+        # N_w_A = self.frame.ang_vel_in(self.N)
+        # N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
+        # self.frame.set_ang_vel(self.N, N_w_A)
 
-            N_w_A = self.frame.ang_acc_in(self.N)
-            N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
-            ud_zerod = {udr: 0 for udr in a_ud}
-            N_w_A = N_w_A.xreplace(ud_zerod)
-            self.frame.set_ang_acc(self.N, N_w_A)
-        else:
-            self.frame.set_ang_vel(self.N, ang_vel)
+        # N_w_A = self.frame.ang_acc_in(self.N)
+        # N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
+        # ud_zerod = {udr: 0 for udr in a_ud}
+        # N_w_A = N_w_A.xreplace(ud_zerod)
+        # self.frame.set_ang_acc(self.N, N_w_A)
+        #else:
+        #    self.frame.set_ang_vel(self.N, ang_vel)
         
-        if 'pos_x' not in self.dofs and 'pos_y' not in self.dofs and 'pos_z' not in self.dofs: 
-            N_v_A = self.com.vel(self.N)
-            N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
-            self.com.set_vel(self.N, N_v_A)
+        #if 'pos_x' not in self.dofs and 'pos_y' not in self.dofs and 'pos_z' not in self.dofs: 
+        self.com.set_vel(self.frame, self.dynamic_vel[0]*self.N.z)
+        self.com.v1pt_theory(self.O, self.N, self.frame)
+        # N_v_A = self.com.vel(self.N)
+        # N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
+        # self.com.set_vel(self.N, N_v_A)
 
-            N_v_A = self.com.acc(self.N)
-            N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
-            ud_zerod = {udr: 0 for udr in a_ud}
-            N_v_A = N_v_A.xreplace(ud_zerod)
-            self.com.set_acc(self.N, N_v_A)
-        else:
-            self.com.set_vel(self.N, com_vel)
+        # N_v_A = self.com.acc(self.N)
+        # N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
+        # ud_zerod = {udr: 0 for udr in a_ud}
+        # N_v_A = N_v_A.xreplace(ud_zerod)
+        # self.com.set_acc(self.N, N_v_A)
+        #else:
+        #    self.com.set_vel(self.N, com_vel)
 
         # Inertia matrix
         self.Ixx = sm.symbols('I_xx_' + name)
@@ -180,11 +185,13 @@ class Object:
     def getFrFrsFromForce(self, force, symbol):
         Rs = -self.mass*self.com.acc(self.N)
         v_com_0 = self.com.vel(self.N).diff(symbol, self.N)
+        print(Rs, v_com_0, self.com.vel(self.N), symbol)
         return v_com_0.dot(force), v_com_0.dot(Rs)
 
     def getFrFrsFromTorque(self, torque, symbol):
         Ts = -(self.frame.ang_acc_in(self.N).dot(self.I) + me.cross(self.frame.ang_vel_in(self.N), self.I).dot(self.frame.ang_vel_in(self.N)))
         w_com_0 = self.frame.ang_vel_in(self.N).diff(symbol, self.N)
+        
         return w_com_0.dot(torque), w_com_0.dot(Ts)
 
     def setStateMass(self, m):
@@ -353,6 +360,7 @@ class Object:
         self.setDynamicVelValues(vel_vals)
         ang_vel_vals = self.getDynamicAngVelValues() + dt * np.array(uds[self.num_position_dofs:])
         self.setDynamicAngVelValues(ang_vel_vals)
+        print(self.state_com,self.state_orientation, self.state_vel,  self.state_ang_vel)
         
     def draw(self, vis):
         vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(self.get_A(self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),self.state_com))
@@ -455,6 +463,9 @@ class Model:
         self.Md = Frs.jacobian(self.ud)
         self.gd = Frs.xreplace(ud_zerod) + Fr
         
+        print(Fr)
+        print(Frs)
+
         print(self.Mk)
         print(self.gk)
         print(self.Md)
@@ -511,7 +522,7 @@ groundFrame = me.ReferenceFrame('N')
 groundOrigin = me.Point('O')
 groundOrigin.set_vel(groundFrame, 0) # lock the origin by setting the vel to zero (required for v2pt_theory later)
 
-obj = Object(groundOrigin, groundFrame, ['rot_x','rot_z','pos_z'])
+obj = Object(groundOrigin, groundFrame, ['rot_z','pos_z'])
 obj.setStateCom(np.array([0.0,-0.1,0.0]))
 obj.setStateOrientation(np.array([0.0,0.0,0.3]))
 obj.addForce(obj.mass*-9.81*groundFrame.y)
