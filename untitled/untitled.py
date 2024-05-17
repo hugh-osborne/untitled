@@ -61,27 +61,31 @@ class Object:
         else:
             self.static_orientation += [sm.symbols('r3_' + name)]
             orientation += [self.static_orientation[-1]]
-        #self.frame.orient_body_fixed(self.N, (self.dynamic_orientation[0],0,self.dynamic_orientation[1]), 'XYZ')
+        #self.frame.orient_body_fixed(self.N, orientation, 'XYZ')
         self.frame.orient_axis(self.N, self.dynamic_orientation[0], self.N.z)  
 
         
         # Angular Velocity
         ang_vel = 0
+        dynamic_ang_vel = 0
         if 'rot_x' in self.dofs:
             self.dynamic_ang_vel += [me.dynamicsymbols('u0_' + name)] #
             ang_vel += self.dynamic_ang_vel[-1]*self.N.x
+            dynamic_ang_vel += self.dynamic_ang_vel[-1]*self.N.x
         else:
             self.static_ang_vel += [sm.symbols('u0_' + name)]
             ang_vel += self.static_ang_vel[-1]*self.N.x
         if 'rot_y' in self.dofs:
             self.dynamic_ang_vel += [me.dynamicsymbols('u1_' + name)] # 
             ang_vel += self.dynamic_ang_vel[-1]*self.N.y
+            dynamic_ang_vel += self.dynamic_ang_vel[-1]*self.N.y
         else:
             self.static_ang_vel += [sm.symbols('u1_' + name)]
             ang_vel += self.static_ang_vel[-1]*self.N.y
         if 'rot_z' in self.dofs:
             self.dynamic_ang_vel += [me.dynamicsymbols('u2_' + name)] # 
             ang_vel += self.dynamic_ang_vel[-1]*self.N.z
+            dynamic_ang_vel += self.dynamic_ang_vel[-1]*self.N.z
         else:
             self.static_ang_vel += [sm.symbols('u2_' + name)]
             ang_vel += self.static_ang_vel[-1]*self.N.z
@@ -107,25 +111,29 @@ class Object:
         else:
             self.static_position += [sm.symbols('q2_' + name)]
             com_pos += self.static_position[-1]*self.frame.z
-        self.com.set_pos(self.O, self.static_position[0]*self.frame.x + self.static_position[1]*self.frame.y + self.dynamic_position[0]*self.frame.z) 
+        self.com.set_pos(self.O, com_pos) 
 
         # Centre of mass velocity
         com_vel = 0
+        dynamic_com_vel = 0
         if 'pos_x' in self.dofs:
             self.dynamic_vel += [me.dynamicsymbols('v0_' + name)] # velocity
             com_vel += self.dynamic_vel[-1]*self.frame.x
+            dynamic_com_vel += self.dynamic_vel[-1]*self.frame.x
         else:
             self.static_vel += [sm.symbols('v0_' + name)]
             com_vel += self.static_vel[-1]*self.frame.x
         if 'pos_y' in self.dofs:        
             self.dynamic_vel += [me.dynamicsymbols('v1_' + name)] # 
             com_vel += self.dynamic_vel[-1]*self.frame.y
+            dynamic_com_vel += self.dynamic_vel[-1]*self.frame.y
         else:
             self.static_vel += [sm.symbols('v1_' + name)]
             com_vel += self.static_vel[-1]*self.frame.y
         if 'pos_z' in self.dofs:    
             self.dynamic_vel += [me.dynamicsymbols('v2_' + name)] # 
             com_vel += self.dynamic_vel[-1]*self.frame.z
+            dynamic_com_vel += self.dynamic_vel[-1]*self.frame.z
         else:
             self.static_vel += [sm.symbols('v2_' + name)]
             com_vel += self.static_vel[-1]*self.frame.z
@@ -140,7 +148,7 @@ class Object:
         a_qd = a_q.diff(t)
         a_ud = a_u.diff(t)
 
-        self.frame.set_ang_vel(self.N, self.dynamic_ang_vel[0]*self.N.z)
+        self.frame.set_ang_vel(self.N, dynamic_ang_vel)
         #if 'rot_x' not in self.dofs and 'rot_y' not in self.dofs and 'rot_z' not in self.dofs: 
         # N_w_A = self.frame.ang_vel_in(self.N)
         # N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
@@ -155,11 +163,11 @@ class Object:
         #    self.frame.set_ang_vel(self.N, ang_vel)
         
         #if 'pos_x' not in self.dofs and 'pos_y' not in self.dofs and 'pos_z' not in self.dofs: 
-        self.com.set_vel(self.frame, self.dynamic_vel[0]*self.N.z)
+        self.com.set_vel(self.frame, dynamic_com_vel)
         self.com.v1pt_theory(self.O, self.N, self.frame)
-        # N_v_A = self.com.vel(self.N)
-        # N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
-        # self.com.set_vel(self.N, N_v_A)
+        #N_v_A = self.com.vel(self.frame)
+        #N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
+        #self.com.set_vel(self.frame, N_v_A)
 
         # N_v_A = self.com.acc(self.N)
         # N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
@@ -356,6 +364,7 @@ class Object:
         self.setDynamicComValues(com_vals)
         orientation_vals = self.getDynamicOrientationValues() + dt * np.array(qds[self.num_position_dofs:])
         self.setDynamicOrientationValues(orientation_vals)
+        print(self.getDynamicVelValues(), uds,  self.num_position_dofs,np.array(uds[:self.num_position_dofs]))
         vel_vals = self.getDynamicVelValues() + dt * np.array(uds[:self.num_position_dofs])
         self.setDynamicVelValues(vel_vals)
         ang_vel_vals = self.getDynamicAngVelValues() + dt * np.array(uds[self.num_position_dofs:])
@@ -463,6 +472,8 @@ class Model:
         self.Md = Frs.jacobian(self.ud)
         self.gd = Frs.xreplace(ud_zerod) + Fr
         
+        self.gd = self.gd.xreplace(dict(zip(self.qd, us)))
+        
         print(Fr)
         print(Frs)
 
@@ -503,7 +514,6 @@ class Model:
 
         # Now the angular acceleration
         ud_vals = np.linalg.solve(-Md_vals, np.squeeze(gd_vals))
-        
         dof_counter = 0
         for name, obj in self.objects.items():
             obj.updateState(qd_vals[dof_counter:dof_counter+obj.num_dofs], ud_vals[dof_counter:dof_counter+obj.num_dofs], dt)
@@ -519,10 +529,10 @@ class Muscle:
 
 gravity_constant = sm.symbols('g')
 groundFrame = me.ReferenceFrame('N')
-groundOrigin = me.Point('O')
+groundOrigin = me.Point('O')                 
 groundOrigin.set_vel(groundFrame, 0) # lock the origin by setting the vel to zero (required for v2pt_theory later)
-
-obj = Object(groundOrigin, groundFrame, ['rot_z','pos_z'])
+ 
+obj = Object(groundOrigin, groundFrame, ['rot_z','pos_z', 'pos_x'])
 obj.setStateCom(np.array([0.0,-0.1,0.0]))
 obj.setStateOrientation(np.array([0.0,0.0,0.3]))
 obj.addForce(obj.mass*-9.81*groundFrame.y)
