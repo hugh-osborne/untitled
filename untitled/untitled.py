@@ -5,8 +5,10 @@ import sympy as sm
 import sympy.physics.mechanics as me
 
 class Object:
-    def __init__(self, sym_parentOrigin, sym_parentFrame, dofs, name="bone", mass=100.0, inertia=np.identity(3)):
+    def __init__(self, name, dofs, parent=None, mass=100.0, inertia=np.identity(3)):
         self.name = name
+        
+        self.parent = parent
         
         self.forces = []
         self.torques = []
@@ -25,9 +27,40 @@ class Object:
         self.num_position_dofs = len([1 for a in ['pos_x','pos_y','pos_z'] if a in self.dofs])
         self.num_rotation_dofs = len([1 for a in ['rot_x','rot_y','rot_z'] if a in self.dofs])
         
+        self.dof_dynamic_inds = {}
+        self.dof_static_inds = {}
+        dindex = 0
+        sindex = 0
+        for f in ['rot_x','rot_y','rot_z']:
+            if f in self.dofs:
+                self.dof_dynamic_inds[f] = dindex
+                dindex += 1
+            else:
+                self.dof_static_inds[f] = sindex
+                sindex += 1
+        dindex = 0
+        sindex = 0
+        for f in ['pos_x','pos_y','pos_z']:
+            if f in self.dofs:
+                self.dof_dynamic_inds[f] = dindex
+                dindex += 1
+            else:
+                self.dof_static_inds[f] = sindex
+                sindex += 1
+                
+        # limits on dofs - a min/max pair for each dof
+        self.dof_limits = {}
+        
         # symbols
-        self.parentFrame = sym_parentFrame
-        self.parentOrigin = sym_parentOrigin
+        if self.parent == None:
+            self.parentFrame = me.ReferenceFrame('N')
+            self.parentOrigin = me.Point('O')                 
+            self.parentOrigin.set_vel(self.parentFrame, 0)
+            self.groundFrame = self.parentFrame
+        else:
+            self.parentFrame = self.parent.frame
+            self.parentOrigin = self.parent.com
+            self.groundFrame = self.parent.groundFrame
         self.N = self.parentFrame
         self.O = self.parentOrigin
 
@@ -61,11 +94,10 @@ class Object:
         else:
             self.static_orientation += [sm.symbols('r3_' + name)]
             orientation += [self.static_orientation[-1]]
+            
         self.frame.orient_body_fixed(self.N, orientation, 'XYZ')
         
-        #self.frame.orient_axis(self.N, self.dynamic_orientation[0], self.N.z)  
 
-        
         # Angular Velocity
         ang_vel = 0
         dynamic_ang_vel = 0
@@ -91,6 +123,8 @@ class Object:
             self.static_ang_vel += [sm.symbols('u2_' + name)]
             ang_vel += self.static_ang_vel[-1]*self.N.z
         
+        self.frame.set_ang_vel(self.N, dynamic_ang_vel)
+        
         # Centre of mass
         self.com = me.Point('com_' + name) #
         com_pos = 0
@@ -112,6 +146,7 @@ class Object:
         else:
             self.static_position += [sm.symbols('q2_' + name)]
             com_pos += self.static_position[-1]*self.frame.z
+        
         self.com.set_pos(self.O, com_pos) 
 
         # Centre of mass velocity
@@ -139,44 +174,8 @@ class Object:
             self.static_vel += [sm.symbols('v2_' + name)]
             com_vel += self.static_vel[-1]*self.frame.z
         
-        
-        t = me.dynamicsymbols._t
-        # Put the orientation and angular speed into matrices
-        a_q = sm.Matrix(self.dynamic_position + self.dynamic_orientation)
-        a_u = sm.Matrix(self.dynamic_vel + self.dynamic_ang_vel)
-
-        # Define the time differentials of orientation and angular speed
-        a_qd = a_q.diff(t)
-        a_ud = a_u.diff(t)
-
-        self.frame.set_ang_vel(self.N, dynamic_ang_vel)
-        #if 'rot_x' not in self.dofs and 'rot_y' not in self.dofs and 'rot_z' not in self.dofs: 
-        # N_w_A = self.frame.ang_vel_in(self.N)
-        # N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
-        # self.frame.set_ang_vel(self.N, N_w_A)
-
-        # N_w_A = self.frame.ang_acc_in(self.N)
-        # N_w_A = N_w_A.xreplace(dict(zip(a_qd, a_u)))
-        # ud_zerod = {udr: 0 for udr in a_ud}
-        # N_w_A = N_w_A.xreplace(ud_zerod)
-        # self.frame.set_ang_acc(self.N, N_w_A)
-        #else:
-        #    self.frame.set_ang_vel(self.N, ang_vel)
-        
-        #if 'pos_x' not in self.dofs and 'pos_y' not in self.dofs and 'pos_z' not in self.dofs: 
         self.com.set_vel(self.frame, dynamic_com_vel)
-        self.com.v1pt_theory(self.O, self.N, self.frame)
-        #N_v_A = self.com.vel(self.frame)
-        #N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
-        #self.com.set_vel(self.frame, N_v_A)
-
-        # N_v_A = self.com.acc(self.N)
-        # N_v_A = N_v_A.xreplace(dict(zip(a_qd, a_u)))
-        # ud_zerod = {udr: 0 for udr in a_ud}
-        # N_v_A = N_v_A.xreplace(ud_zerod)
-        # self.com.set_acc(self.N, N_v_A)
-        #else:
-        #    self.com.set_vel(self.N, com_vel)
+        self.com.v1pt_theory(self.O, self.groundFrame, self.frame)
 
         # Inertia matrix
         self.Ixx = sm.symbols('I_xx_' + name)
@@ -191,14 +190,31 @@ class Object:
         # symbol functions
         self.get_A = sm.lambdify(orientation, self.N.dcm(self.frame))
         
+    def addDOFLimits(self, dof, _min, _max):
+        if dof not in self.dofs:
+            print(dof, "is not a degree of freedom for this object (", self.name, ").")
+            return
+        
+        self.dof_limits[dof] = (_min, _max)
+        
+    def getFrameWorldMatrix(self):
+        if self.parent == None:
+            return self.get_A(self.state_orientation[0],self.state_orientation[1],self.state_orientation[2])
+        return np.matmul(self.parent.getFrameWorldMatrix(), self.get_A(self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]))
+    
+    def getComWorld(self):
+        if self.parent == None:
+            return np.matmul(self.getFrameWorldMatrix(), self.state_com)    
+        return self.parent.getComWorld() + np.matmul(self.getFrameWorldMatrix(), self.state_com)
+        
     def getFrFrsFromForce(self, force, symbol):
-        Rs = -self.mass*self.com.acc(self.N)
-        v_com_0 = self.com.vel(self.N).diff(symbol, self.N)
+        Rs = -self.mass*self.com.acc(self.groundFrame)
+        v_com_0 = self.com.vel(self.groundFrame).diff(symbol, self.groundFrame)
         return v_com_0.dot(force), v_com_0.dot(Rs)
 
     def getFrFrsFromTorque(self, torque, symbol):
-        Ts = -(self.frame.ang_acc_in(self.N).dot(self.I) + me.cross(self.frame.ang_vel_in(self.N), self.I).dot(self.frame.ang_vel_in(self.N)))
-        w_com_0 = self.frame.ang_vel_in(self.N).diff(symbol, self.N)
+        Ts = -(self.frame.ang_acc_in(self.groundFrame).dot(self.I) + me.cross(self.frame.ang_vel_in(self.groundFrame), self.I).dot(self.frame.ang_vel_in(self.groundFrame)))
+        w_com_0 = self.frame.ang_vel_in(self.groundFrame).diff(symbol, self.groundFrame)
         
         return w_com_0.dot(torque), w_com_0.dot(Ts)
 
@@ -362,29 +378,36 @@ class Object:
     def updateState(self, qds, uds, dt):
         com_vals = self.getDynamicComValues() + dt * np.array(qds[:self.num_position_dofs])
         vel_vals = self.getDynamicVelValues() + dt * np.array(uds[:self.num_position_dofs])
-        #if com_vals[0] < -0.5:
-        #    com_vals[0] = -0.5
-        #    vel_vals[0] = 0.0
-        self.setDynamicComValues(com_vals)
         orientation_vals = self.getDynamicOrientationValues() + dt * np.array(qds[self.num_position_dofs:])
-        self.setDynamicOrientationValues(orientation_vals)
-        #print(self.getDynamicVelValues(), uds,  self.num_position_dofs,np.array(uds[:self.num_position_dofs]))
-        
-        self.setDynamicVelValues(vel_vals)
         ang_vel_vals = self.getDynamicAngVelValues() + dt * np.array(uds[self.num_position_dofs:])
+        
+        for d in ["rot_x", "rot_y", "rot_z"]:
+            if d in self.dofs and d in self.dof_limits:
+                if orientation_vals[self.dof_dynamic_inds[d]] < self.dof_limits[d][0]:
+                    orientation_vals[self.dof_dynamic_inds[d]] = self.dof_limits[d][0]
+                    ang_vel_vals[self.dof_dynamic_inds[d]] = 0.0
+                if orientation_vals[self.dof_dynamic_inds[d]] > self.dof_limits[d][1]:
+                    orientation_vals[self.dof_dynamic_inds[d]] = self.dof_limits[d][1]
+                    ang_vel_vals[self.dof_dynamic_inds[d]] = 0.0
+                    
+        for d in ["pos_x", "pos_y", "pos_z"]:
+            if d in self.dofs and d in self.dof_limits:
+                if com_vals[self.dof_dynamic_inds[d]] < self.dof_limits[d][0]:
+                    com_vals[self.dof_dynamic_inds[d]] = self.dof_limits[d][0]
+                    vel_vals[self.dof_dynamic_inds[d]] = 0.0
+                if com_vals[self.dof_dynamic_inds[d]] > self.dof_limits[d][1]:
+                    com_vals[self.dof_dynamic_inds[d]] = self.dof_limits[d][1]
+                    vel_vals[self.dof_dynamic_inds[d]] = 0.0
+
+        self.setDynamicComValues(com_vals)
+        self.setDynamicOrientationValues(orientation_vals)
+        self.setDynamicVelValues(vel_vals)
         self.setDynamicAngVelValues(ang_vel_vals)
-        print(self.state_com,self.state_orientation, self.state_vel,  self.state_ang_vel)
         
     def draw(self, vis):
-        vis.drawLine(np.array([0.0,0.0,0.0]), np.matmul(self.get_A(self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),self.state_com))
-        vis.drawCube(matrix=np.identity(4), model_pos=np.array([0.0,0.0,0.0]), scale=0.02, col=(1,0,0,1))
-        vis.drawCube(matrix=np.identity(4), model_pos=np.matmul(self.get_A(self.state_orientation[0],self.state_orientation[1],self.state_orientation[2]),self.state_com), scale=0.02, col=(1,0,0,1))
-
-    # @classmethod
-    # def buildObjectFromInertiaMatrix(cls, I_xx, I_yy, I_zz, I_xy, I_xz, I_yz, referenceFrame=np.identity(3), com=np.zeros((3,1)), name="object", mass=1.0):
-    #     new_object = cls(com, referenceFrame, name, mass)
-    #     new_object.I = np.matrix([[I_xx, -I_xy, -I_xz],[-I_xy, I_yy, -I_yz],[-I_xz, -I_yz, I_zz]]) # Inertia Matrix
-    #     return new_object
+        vis.drawLine(self.parent.getComWorld(), self.getComWorld())
+        vis.drawCube(matrix=np.identity(4), model_pos=self.parent.getComWorld(), scale=0.02, col=(1,0,0,1))
+        vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.02, col=(1,0,0,1))
     
     def addTorque(self, torque):
         self.torques += [torque]
@@ -454,10 +477,22 @@ class Model:
         Frs = sm.Matrix(Frs_bar)
 
         # Put the orientation and angular speed into matrices
-        Is = sm.Matrix([[self.objects[o].Ixx,self.objects[o].Iyy,self.objects[o].Izz,self.objects[o].Ixy,self.objects[o].Iyz,self.objects[o].Ixz] for o in self.objects])
-        statics = sm.Matrix([self.objects[o].static_position + self.objects[o].static_orientation + self.objects[o].static_vel + self.objects[o].static_ang_vel for o in self.objects])
-        qs = sm.Matrix([self.objects[o].dynamic_position + self.objects[o].dynamic_orientation for o in self.objects])
-        us = sm.Matrix([self.objects[o].dynamic_vel + self.objects[o].dynamic_ang_vel for o in self.objects])
+        Is = []
+        for o in self.objects:
+            Is += [self.objects[o].Ixx,self.objects[o].Iyy,self.objects[o].Izz,self.objects[o].Ixy,self.objects[o].Iyz,self.objects[o].Ixz]
+        Is = sm.Matrix([Is])
+        statics = []
+        for o in self.objects:
+            statics += self.objects[o].static_position + self.objects[o].static_orientation + self.objects[o].static_vel + self.objects[o].static_ang_vel
+        statics = sm.Matrix([statics])
+        qs = []
+        for o in self.objects:
+            qs += self.objects[o].dynamic_position + self.objects[o].dynamic_orientation
+        qs = sm.Matrix(qs)
+        us = []
+        for o in self.objects:
+            us += self.objects[o].dynamic_vel + self.objects[o].dynamic_ang_vel
+        us = sm.Matrix(us)
         ms = sm.Matrix([self.objects[o].mass for o in self.objects])
 
         # Define the time differentials of orientation and angular speed
@@ -511,37 +546,30 @@ class Model:
         # Now the angular acceleration
         ud_vals = np.linalg.solve(-Md_vals, gd_vals)
         dof_counter = 0
-        for name, obj in self.objects.items():
+        for _, obj in self.objects.items():
             obj.updateState(qd_vals[dof_counter:dof_counter+obj.num_dofs], ud_vals[dof_counter:dof_counter+obj.num_dofs], dt)
             dof_counter += obj.num_dofs
         
         return qd_vals, ud_vals
         
 
-class Muscle:
-    def __init__(self):
-        self.name = "muscle"
-        
-
 gravity_constant = sm.symbols('g')
-groundFrame = me.ReferenceFrame('N')
-groundOrigin = me.Point('O')                 
-groundOrigin.set_vel(groundFrame, 0) # lock the origin by setting the vel to zero (required for v2pt_theory later)
- 
-obj = Object(groundOrigin, groundFrame, ['rot_z'])
-obj.setStateCom(np.array([0.0,-0.1,0.0]))
-obj.setStateOrientation(np.array([0.0,0.0,0.3]))
-obj.addForce(obj.mass*-9.81*groundFrame.y)
-obj.addTorque(0.0*groundFrame.z)
+ground = Object("ground", [], parent=None, mass=0.0)
 
-obj2 = Object(obj.com, obj.frame, ['rot_z'])
+obj = Object("bone1", ['rot_z'], parent=ground)
+obj.setStateCom(np.array([0.0,-0.1,0.0]))
+obj.setStateOrientation(np.array([0.0,0.0,0.0]))
+obj.addForce(obj.mass*-9.81*ground.frame.y)
+obj.addTorque(0.0*ground.frame.z)
+
+obj2 = Object("bone2", ['rot_z','pos_y'], parent=obj)
 obj2.setStateCom(np.array([0.0,-0.1,0.0]))
-obj2.setStateOrientation(np.array([0.0,0.0,0.1]))
-obj2.addForce(obj.mass*-9.81*groundFrame.y)
-obj2.addTorque(0.0*groundFrame.z)
+obj2.addDOFLimits("pos_y", -0.2, 0.2)
+obj2.setStateOrientation(np.array([0.0,0.0,-0.3]))
+obj2.addForce(obj.mass*-9.81*ground.frame.y)
+obj2.addTorque(0.0*ground.frame.z)
 
 mod = Model()
-
 mod.addObject(obj)
 mod.addObject(obj2)
 mod.setup()
@@ -556,19 +584,3 @@ for i in range(1000):
     obj.draw(vis)
     obj2.draw(vis)
     vis.endRendering()
-
-# ground = Bone(1.0,1.0,1.0,0.0,0.0,0.0, com_world=np.reshape(np.array([0.0,0.5,0.0]), (3,1)))
-# bone = Bone(0.0001,0.0001,0.0001,0,0,0, parent=ground, pivot_local=np.array([0.0,0.5,0.0]))
-# bone.addLinearForce(np.transpose(np.array([[0.0,-9.8,0.0]])))
-# bone.addForce(np.transpose(np.array([[0.0,0.5,0.0]])), np.transpose(np.array([[0.3,0.0,0.0]]))) # Add a force that acts upwards with 1N 0.3 across from the origin 
-
-# vis = Visualiser()
-# vis.setupVisualiser()
-
-# for i in range(1000):
-#     bone.euler(0.001)
-#     bone.forces = []
-#     vis.beginRendering()
-#     ground.draw(vis)
-#     bone.draw(vis)
-#     vis.endRendering()
