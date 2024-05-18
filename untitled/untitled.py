@@ -5,7 +5,7 @@ import sympy as sm
 import sympy.physics.mechanics as me
 
 class Object:
-    def __init__(self, sym_parentOrigin, sym_parentFrame, dofs, name="bone", mass=1.0, inertia=np.identity(3)):
+    def __init__(self, sym_parentOrigin, sym_parentFrame, dofs, name="bone", mass=100.0, inertia=np.identity(3)):
         self.name = name
         
         self.forces = []
@@ -61,8 +61,9 @@ class Object:
         else:
             self.static_orientation += [sm.symbols('r3_' + name)]
             orientation += [self.static_orientation[-1]]
-        #self.frame.orient_body_fixed(self.N, orientation, 'XYZ')
-        self.frame.orient_axis(self.N, self.dynamic_orientation[0], self.N.z)  
+        self.frame.orient_body_fixed(self.N, orientation, 'XYZ')
+        
+        #self.frame.orient_axis(self.N, self.dynamic_orientation[0], self.N.z)  
 
         
         # Angular Velocity
@@ -193,7 +194,6 @@ class Object:
     def getFrFrsFromForce(self, force, symbol):
         Rs = -self.mass*self.com.acc(self.N)
         v_com_0 = self.com.vel(self.N).diff(symbol, self.N)
-        print(Rs, v_com_0, self.com.vel(self.N), symbol)
         return v_com_0.dot(force), v_com_0.dot(Rs)
 
     def getFrFrsFromTorque(self, torque, symbol):
@@ -361,11 +361,15 @@ class Object:
         
     def updateState(self, qds, uds, dt):
         com_vals = self.getDynamicComValues() + dt * np.array(qds[:self.num_position_dofs])
+        vel_vals = self.getDynamicVelValues() + dt * np.array(uds[:self.num_position_dofs])
+        #if com_vals[0] < -0.5:
+        #    com_vals[0] = -0.5
+        #    vel_vals[0] = 0.0
         self.setDynamicComValues(com_vals)
         orientation_vals = self.getDynamicOrientationValues() + dt * np.array(qds[self.num_position_dofs:])
         self.setDynamicOrientationValues(orientation_vals)
-        print(self.getDynamicVelValues(), uds,  self.num_position_dofs,np.array(uds[:self.num_position_dofs]))
-        vel_vals = self.getDynamicVelValues() + dt * np.array(uds[:self.num_position_dofs])
+        #print(self.getDynamicVelValues(), uds,  self.num_position_dofs,np.array(uds[:self.num_position_dofs]))
+        
         self.setDynamicVelValues(vel_vals)
         ang_vel_vals = self.getDynamicAngVelValues() + dt * np.array(uds[self.num_position_dofs:])
         self.setDynamicAngVelValues(ang_vel_vals)
@@ -473,14 +477,6 @@ class Model:
         self.gd = Frs.xreplace(ud_zerod) + Fr
         
         self.gd = self.gd.xreplace(dict(zip(self.qd, us)))
-        
-        print(Fr)
-        print(Frs)
-
-        print(self.Mk)
-        print(self.gk)
-        print(self.Md)
-        print(self.gd)
 
         # Now build the equations of motion function that will be applied each time step
         self.eval_eom = sm.lambdify((statics, qs, us, ms, Is), [self.Mk, self.gk, self.Md, self.gd])
@@ -510,10 +506,10 @@ class Model:
         # system of equations defined by the mass matrix.
 
         # calculate the angular speed - this apparently may not always equal u but I don't know why...
-        qd_vals = np.linalg.solve(-Mk_vals, np.squeeze(gk_vals))
+        qd_vals = np.linalg.solve(-Mk_vals, gk_vals)
 
         # Now the angular acceleration
-        ud_vals = np.linalg.solve(-Md_vals, np.squeeze(gd_vals))
+        ud_vals = np.linalg.solve(-Md_vals, gd_vals)
         dof_counter = 0
         for name, obj in self.objects.items():
             obj.updateState(qd_vals[dof_counter:dof_counter+obj.num_dofs], ud_vals[dof_counter:dof_counter+obj.num_dofs], dt)
@@ -532,14 +528,22 @@ groundFrame = me.ReferenceFrame('N')
 groundOrigin = me.Point('O')                 
 groundOrigin.set_vel(groundFrame, 0) # lock the origin by setting the vel to zero (required for v2pt_theory later)
  
-obj = Object(groundOrigin, groundFrame, ['rot_z','pos_z', 'pos_x'])
+obj = Object(groundOrigin, groundFrame, ['rot_z'])
 obj.setStateCom(np.array([0.0,-0.1,0.0]))
 obj.setStateOrientation(np.array([0.0,0.0,0.3]))
 obj.addForce(obj.mass*-9.81*groundFrame.y)
 obj.addTorque(0.0*groundFrame.z)
+
+obj2 = Object(obj.com, obj.frame, ['rot_z'])
+obj2.setStateCom(np.array([0.0,-0.1,0.0]))
+obj2.setStateOrientation(np.array([0.0,0.0,0.1]))
+obj2.addForce(obj.mass*-9.81*groundFrame.y)
+obj2.addTorque(0.0*groundFrame.z)
+
 mod = Model()
 
 mod.addObject(obj)
+mod.addObject(obj2)
 mod.setup()
 
 vis = Visualiser()
@@ -550,6 +554,7 @@ for i in range(1000):
 
     vis.beginRendering()
     obj.draw(vis)
+    obj2.draw(vis)
     vis.endRendering()
 
 # ground = Bone(1.0,1.0,1.0,0.0,0.0,0.0, com_world=np.reshape(np.array([0.0,0.5,0.0]), (3,1)))
