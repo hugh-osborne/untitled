@@ -9,6 +9,9 @@ class Object:
         self.name = name
         
         self.parent = parent
+        if parent != None:
+            self.parent.child = self
+        self.child = None
         
         self.forces = []
         self.torques = []
@@ -19,6 +22,7 @@ class Object:
         self.state_ang_vel = np.zeros(3) # This will be u0,u1,u2
         self.state_vel = np.zeros(3) # This will be v0,v1,v2
         self.state_com = np.zeros(3) # This will be q0,q1,q2
+        self.state_parent_pivot = np.zeros(3)
         # Declare which degrees of freedom we want to calculate for this object.
         # Any dofs not declared will be locked to the parent frame
         # full set is ['rot_x','rot_y','rot_z','pos_x','pos_y','pos_z']
@@ -54,15 +58,17 @@ class Object:
         # symbols
         if self.parent == None:
             self.parentFrame = me.ReferenceFrame('N')
-            self.parentOrigin = me.Point('O')                 
-            self.parentOrigin.set_vel(self.parentFrame, 0)
+            self.parentPivot = me.Point('O')                 
+            self.parentPivot.set_vel(self.parentFrame, 0)
             self.groundFrame = self.parentFrame
         else:
             self.parentFrame = self.parent.frame
-            self.parentOrigin = self.parent.com
+            self.parentPivot = me.Point('P_' + name)
+            self.parentPivotSymbols = [sm.symbols('p0_' + name), sm.symbols('p1_' + name), sm.symbols('p2_' + name)]
+            self.parentPivot.set_pos(self.parent.com, self.parentPivotSymbols[0]*self.parent.frame.x + self.parentPivotSymbols[1]*self.parent.frame.y + self.parentPivotSymbols[2]*self.parent.frame.z)
             self.groundFrame = self.parent.groundFrame
         self.N = self.parentFrame
-        self.O = self.parentOrigin
+        self.O = self.parentPivot
 
         self.mass = sm.symbols('m_' + name) # mass
         self.dynamic_orientation = []
@@ -205,7 +211,12 @@ class Object:
     def getComWorld(self):
         if self.parent == None:
             return np.matmul(self.getFrameWorldMatrix(), self.state_com)    
-        return self.parent.getComWorld() + np.matmul(self.getFrameWorldMatrix(), self.state_com)
+        return self.getParentPivotWorld() + np.matmul(self.getFrameWorldMatrix(), self.state_com)
+    
+    def getParentPivotWorld(self):
+        if self.parent == None:
+            return np.matmul(self.getFrameWorldMatrix(), self.state_parent_pivot)    
+        return self.parent.getComWorld() + np.matmul(self.parent.getFrameWorldMatrix(), self.state_parent_pivot)
         
     def getFrFrsFromForce(self, force, symbol):
         Rs = -self.mass*self.com.acc(self.groundFrame)
@@ -226,6 +237,12 @@ class Object:
         
     def setStateCom(self, c):
         self.state_com = c
+        
+    def setStateParentPivot(self, p):
+        self.state_parent_pivot = p
+        
+    def getStateParentPivot(self):
+        return self.state_parent_pivot
        
     def getDofOrientationValues(self):
         dvals = []
@@ -405,9 +422,22 @@ class Object:
         self.setDynamicAngVelValues(ang_vel_vals)
         
     def draw(self, vis):
-        vis.drawLine(self.parent.getComWorld(), self.getComWorld())
-        vis.drawCube(matrix=np.identity(4), model_pos=self.parent.getComWorld(), scale=0.02, col=(1,0,0,1))
-        vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.02, col=(1,0,0,1))
+        if self.parent == None: # Draw the ground object with just a single green cube
+            vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.02, col=(0,1,0,1))
+            return
+        if self.parent != None:
+            if self.child != None: # This object has both a parent and child so draw a line between the pivots
+                vis.drawLine(self.getParentPivotWorld(), self.child.getParentPivotWorld())
+                vis.drawCube(matrix=np.identity(4), model_pos=self.getParentPivotWorld(), scale=0.02, col=(1,0,0,1))
+                #vis.drawCube(matrix=np.identity(4), model_pos=self.child.getParentPivotWorld(), scale=0.02, col=(1,0,0,1))
+                vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.01, col=(0,1,0,1))
+            else : # This is the end of the chain so just draw
+                vis.drawLine(self.getParentPivotWorld(), self.getComWorld())
+                vis.drawCube(matrix=np.identity(4), model_pos=self.getParentPivotWorld(), scale=0.02, col=(1,0,0,1))
+                vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.01, col=(0,1,0,1))
+                
+    def forcePointToTorque(self, force, point):
+        print("not implemented.")
     
     def addTorque(self, torque):
         self.torques += [torque]
@@ -418,11 +448,6 @@ class Object:
 class Model:
     def __init__(self):
         self.t = me.dynamicsymbols._t
-        self.origin = me.Point('O')
-        self.referenceFrame = me.ReferenceFrame('N')
-        
-        # the origin mustn't move
-        self.origin.set_vel(self.referenceFrame, 0)
         
         self.objects = {}
         
@@ -452,18 +477,18 @@ class Model:
         print("Total number of DOFs:", total_num_dofs)
 
         # Now we loop through each object and get its angular speed
-        for name, obj in self.objects.items():
+        for _, obj in self.objects.items():
             for dof_o in obj.dynamic_vel + obj.dynamic_ang_vel:
                 Fr = 0
                 Frs = 0
                 
-                for fname, force_obj in self.objects.items(): # can this be reduced so we're not getting forces for all objects?
+                for _, force_obj in self.objects.items(): # can this be reduced so we're not getting forces for all objects?
                     for force in force_obj.forces:
                         fr, frs = force_obj.getFrFrsFromForce(force, dof_o)
                         Fr += fr
                         Frs += frs
             
-                for tname, torque_obj in self.objects.items(): # can this be reduced so we're not getting forces for all objects?
+                for _, torque_obj in self.objects.items(): # can this be reduced so we're not getting forces for all objects?
                     for torque in torque_obj.torques:
                         fr, frs = torque_obj.getFrFrsFromTorque(torque, dof_o)
                         Fr += fr
@@ -483,7 +508,7 @@ class Model:
         Is = sm.Matrix([Is])
         statics = []
         for o in self.objects:
-            statics += self.objects[o].static_position + self.objects[o].static_orientation + self.objects[o].static_vel + self.objects[o].static_ang_vel
+            statics += self.objects[o].parentPivotSymbols + self.objects[o].static_position + self.objects[o].static_orientation + self.objects[o].static_vel + self.objects[o].static_ang_vel
         statics = sm.Matrix([statics])
         qs = []
         for o in self.objects:
@@ -523,7 +548,7 @@ class Model:
         m_vals = []
         i_vals = []
         for name, obj in self.objects.items():
-            static_vals = np.concatenate([static_vals, obj.getStaticComValues(), obj.getStaticOrientationValues(), obj.getStaticVelValues(), obj.getStaticAngVelValues()], axis=0)
+            static_vals = np.concatenate([static_vals, obj.getStateParentPivot(), obj.getStaticComValues(), obj.getStaticOrientationValues(), obj.getStaticVelValues(), obj.getStaticAngVelValues()], axis=0)
             q_vals = np.concatenate([q_vals, obj.getDynamicComValues(),obj.getDynamicOrientationValues()], axis=0)
             u_vals = np.concatenate([u_vals, obj.getDynamicVelValues(),obj.getDynamicAngVelValues()], axis=0)
             m_vals += [obj.state_mass]
@@ -557,12 +582,14 @@ gravity_constant = sm.symbols('g')
 ground = Object("ground", [], parent=None, mass=0.0)
 
 obj = Object("bone1", ['rot_z'], parent=ground)
-obj.setStateCom(np.array([0.0,-0.1,0.0]))
+obj.setStateParentPivot(np.array([0.0,-0.1, 0.0])) # pivot is -0.1 below ground
+obj.setStateCom(np.array([0.0,-0.1,0.0])) # com is -0.1 below the pivot
 obj.setStateOrientation(np.array([0.0,0.0,0.0]))
 obj.addForce(obj.mass*-9.81*ground.frame.y)
 obj.addTorque(0.0*ground.frame.z)
 
 obj2 = Object("bone2", ['rot_z','pos_y'], parent=obj)
+obj2.setStateParentPivot(np.array([0.0,-0.1, 0.0]))
 obj2.setStateCom(np.array([0.0,-0.1,0.0]))
 obj2.addDOFLimits("pos_y", -0.2, 0.2)
 obj2.setStateOrientation(np.array([0.0,0.0,-0.3]))
@@ -581,6 +608,7 @@ for i in range(1000):
     qd, ud = mod.solve(0.01)
 
     vis.beginRendering()
+    ground.draw(vis)
     obj.draw(vis)
     obj2.draw(vis)
     vis.endRendering()
