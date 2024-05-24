@@ -436,8 +436,18 @@ class Object:
                 vis.drawCube(matrix=np.identity(4), model_pos=self.getParentPivotWorld(), scale=0.02, col=(1,0,0,1))
                 vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.01, col=(0,1,0,1))
                 
-    def forcePointToTorque(self, force, point):
-        print("not implemented.")
+    # Force and Point are given in the locel reference frame (not ground)
+    def addTorqueAsForcePoint(self, force, point):
+        torque = me.cross(point, force)
+        self.addTorque(torque)
+        
+    def addRotationalDamping(self, coeff):
+        torque = -coeff * self.frame.ang_vel_in(self.parentFrame)
+        self.addTorque(torque)
+        
+    def addTranslationalDamping(self, coeff):
+        force = -coeff * self.com.vel(self.parentFrame)
+        self.addForce(force)
     
     def addTorque(self, torque):
         self.torques += [torque]
@@ -581,20 +591,22 @@ class Model:
 gravity_constant = sm.symbols('g')
 ground = Object("ground", [], parent=None, mass=0.0)
 
-obj = Object("bone1", ['rot_z'], parent=ground)
+obj = Object("bone1", ['rot_z'], parent=ground, mass=10)
 obj.setStateParentPivot(np.array([0.0,-0.1, 0.0])) # pivot is -0.1 below ground
 obj.setStateCom(np.array([0.0,-0.1,0.0])) # com is -0.1 below the pivot
 obj.setStateOrientation(np.array([0.0,0.0,0.0]))
 obj.addForce(obj.mass*-9.81*ground.frame.y)
 obj.addTorque(0.0*ground.frame.z)
+obj.addRotationalDamping(5)
 
-obj2 = Object("bone2", ['rot_z','pos_y'], parent=obj)
+obj2 = Object("bone2", ['rot_z','pos_y'], parent=obj, mass=10)
 obj2.setStateParentPivot(np.array([0.0,-0.1, 0.0]))
 obj2.setStateCom(np.array([0.0,-0.1,0.0]))
 obj2.addDOFLimits("pos_y", -0.2, 0.2)
-obj2.setStateOrientation(np.array([0.0,0.0,-0.3]))
+obj2.setStateOrientation(np.array([0.0,0.0,0.0]))
 obj2.addForce(obj.mass*-9.81*ground.frame.y)
 obj2.addTorque(0.0*ground.frame.z)
+obj2.addRotationalDamping(5)
 
 mod = Model()
 mod.addObject(obj)
