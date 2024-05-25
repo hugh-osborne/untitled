@@ -455,6 +455,35 @@ class Object:
     def addForce(self, force):
         self.forces += [force]
         
+class MillardMuscle:
+    def __init__(self):
+        # muscle activation
+        self.neural_excitation = sm.symbols('u') # input
+        self.muscle_activation_tc = sm.symbols('tau_a') # time constant
+        self.muscle_deactivation_tc = sm.symbols('tau_d') # time constant
+        self.muscle_activation = me.dynamicsymbols('a')
+        
+        # equilibrium model
+        self.musculotendon_length = me.dynamicsymbols('l_MT') # input from bone model
+        self.musculotendon_velocity = me.dynamicsymbols('v_MT') # input from bone model
+        
+        self.max_active_force = sm.symbols('f_o_M')
+        self.max_active_velocity = sm.symbols('v_max_M')
+        self.max_active_muscle_length = sm.symbols('l_o_M')
+        self.tendon_slack_length = sm.symbols('l_s_T')
+        
+        self.pennation_angle = me.dynamicsymbols('alpha')
+        
+        self.force_length = me.dynamicsymbols('f_L') # This is a predefined function
+        self.force_velocity = me.dynamicsymbols('f_V') # This is a predefined function
+        self.passive_force = me.dynamicsymbols('f_PE')
+        self.tendon_force = me.dynamicsymbols('f_T')
+        self.muscle_force = me.dynamicsymbols('f_M') # final output
+        
+        print("not implemented")
+        
+    
+        
 class Model:
     def __init__(self):
         self.t = me.dynamicsymbols._t
@@ -607,6 +636,7 @@ obj2.setStateOrientation(np.array([0.0,0.0,0.0]))
 obj2.addForce(obj.mass*-9.81*ground.frame.y)
 obj2.addTorque(0.0*ground.frame.z)
 obj2.addRotationalDamping(5)
+obj2.addTorqueAsForcePoint(100.0*obj2.frame.x, -0.5*obj2.frame.y)
 
 mod = Model()
 mod.addObject(obj)
