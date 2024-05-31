@@ -439,21 +439,33 @@ class Object:
     # Force and Point are given in the locel reference frame (not ground)
     def addTorqueAsForcePoint(self, force, point):
         torque = me.cross(point, force)
-        self.addTorque(torque)
+        return self.addTorque(torque)
         
     def addRotationalDamping(self, coeff):
         torque = -coeff * self.frame.ang_vel_in(self.parentFrame)
-        self.addTorque(torque)
+        return self.addTorque(torque)
         
     def addTranslationalDamping(self, coeff):
         force = -coeff * self.com.vel(self.parentFrame)
-        self.addForce(force)
+        return self.addForce(force)
     
     def addTorque(self, torque):
         self.torques += [torque]
+        return len(self.torques)-1
         
     def addForce(self, force):
         self.forces += [force]
+        return len(self.forces)-1
+    
+    def updateTorque(self, torque_id, new_torque):
+        self.torques[torque_id] = new_torque
+        
+    def updateForce(self, force_id, new_force):
+        self.forces[force_id] = new_force
+        
+    def updateTorqueAsForcePoint(self, torque_id, force, point):
+        torque = me.cross(point, force)
+        self.updateTorque(torque_id, torque)
         
 class MillardMuscle:
     def __init__(self):
@@ -482,7 +494,26 @@ class MillardMuscle:
         
         print("not implemented")
         
+class RiveraMuscle:
+    def __init__(self, name, _a, _b, _c, _L_0, _L_min, _L_m):
+        self.name = name
+        self.a = _a
+        self.b = _b
+        self.c = _c
+        self.L_0 = _L_0 # Muscle equilibirium length (spring not under tension)
+        self.L_min = _L_min # minimum length
+        
+    def calculateL_t(self, activation):
+        return self.L_0 - (activation*(self.L_0 - self.L_min))
     
+    def calculateForce(self, length, length_velocity, activation):
+        L_t = self.calculateL_t(activation)
+        L_m = length
+        L_m_dot = length_velocity
+        f_a = self.a*(L_t - L_m) - L_m_dot # active force
+        f_p = self.b*(1 - L_m) - L_m_dot # passive force
+        return (self.c*activation*f_a) + f_p # total force
+        
         
 class Model:
     def __init__(self):
@@ -636,7 +667,7 @@ obj2.setStateOrientation(np.array([0.0,0.0,0.0]))
 obj2.addForce(obj.mass*-9.81*ground.frame.y)
 obj2.addTorque(0.0*ground.frame.z)
 obj2.addRotationalDamping(5)
-obj2.addTorqueAsForcePoint(100.0*obj2.frame.x, -0.5*obj2.frame.y)
+obj2_torque = obj2.addTorqueAsForcePoint(100.0*obj2.frame.x, -0.5*obj2.frame.y)
 
 mod = Model()
 mod.addObject(obj)
@@ -648,6 +679,9 @@ vis.setupVisualiser()
 
 for i in range(1000):
     qd, ud = mod.solve(0.01)
+    
+    if i == 10:
+        obj2.updateTorque(obj2_torque, 0.0*ground.frame.z)
 
     vis.beginRendering()
     ground.draw(vis)
