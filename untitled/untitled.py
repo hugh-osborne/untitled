@@ -15,6 +15,10 @@ class Object:
         
         self.forces = []
         self.torques = []
+        self.force_symbols = []
+        self.torque_symbols = []
+        self.state_forces = []
+        self.state_torques = []
         
         self.state_mass = mass
         self.state_inertia = inertia
@@ -437,35 +441,54 @@ class Object:
                 vis.drawCube(matrix=np.identity(4), model_pos=self.getComWorld(), scale=0.01, col=(0,1,0,1))
                 
     # Force and Point are given in the locel reference frame (not ground)
-    def addTorqueAsForcePoint(self, force, point):
-        torque = me.cross(point, force)
-        return self.addTorque(torque)
+    def addTorqueAsForcePoint(self, force_x, force_y, force_z, point_x, point_y, point_z, frame):
+        torque = np.cross(np.array([force_x, force_y, force_z]), np.array([point_x, point_y, point_z]))
+        return self.addTorque(torque[0], torque[1], torque[2], frame)
+    
+    def addTorqueAsForcePointInFrame(self, force_x, force_y, force_z, point_x, point_y, point_z):
+        return self.addTorqueAsForcePoint(force_x, force_y, force_z, point_x, point_y, point_z, self.frame)
         
     def addRotationalDamping(self, coeff):
         torque = -coeff * self.frame.ang_vel_in(self.parentFrame)
-        return self.addTorque(torque)
-        
-    def addTranslationalDamping(self, coeff):
-        force = -coeff * self.com.vel(self.parentFrame)
-        return self.addForce(force)
-    
-    def addTorque(self, torque):
+        self.state_torques += [[]]
+        self.torque_symbols += [[]]
         self.torques += [torque]
         return len(self.torques)-1
         
-    def addForce(self, force):
+    def addTranslationalDamping(self, coeff):
+        force = -coeff * self.com.vel(self.parentFrame)
+        self.state_forces += [[]]
+        self.force_symbols += [[]]
         self.forces += [force]
         return len(self.forces)-1
     
-    def updateTorque(self, torque_id, new_torque):
-        self.torques[torque_id] = new_torque
+    def addTorqueInFrame(self, x, y, z):
+        return self.addTorque(x, y, z, self.frame)
         
-    def updateForce(self, force_id, new_force):
-        self.forces[force_id] = new_force
+    def addForceInFrame(self, x, y, z):
+        return self.addForce(x, y, z, self.frame)
+    
+    def addTorque(self, x, y, z, frame):
+        self.state_torques += [np.array([x, y, z])]
+        self.torque_symbols += [[me.dynamicsymbols('t_x_' + str(len(self.torques)) + '_' + self.name), me.dynamicsymbols('t_y_' + str(len(self.torques)) + '_' + self.name), me.dynamicsymbols('t_z_' + str(len(self.torques)) + '_' + self.name)]]
+        self.torques += [self.torque_symbols[-1][0]*frame.x + self.torque_symbols[-1][1]*frame.y + self.torque_symbols[-1][2]*frame.z]
+        return len(self.torques)-1
         
-    def updateTorqueAsForcePoint(self, torque_id, force, point):
-        torque = me.cross(point, force)
-        self.updateTorque(torque_id, torque)
+    def addForce(self, x, y, z, frame):
+        self.state_forces += [np.array([x, y, z])]
+        self.force_symbols += [[me.dynamicsymbols('f_x_' + str(len(self.forces)) + '_' + self.name), me.dynamicsymbols('f_y_' + str(len(self.forces)) + '_' + self.name), me.dynamicsymbols('f_z_' + str(len(self.forces)) + '_' + self.name)]]
+        self.forces += [self.force_symbols[-1][0]*frame.x + self.force_symbols[-1][1]*frame.y + self.force_symbols[-1][2]*frame.z]
+        return len(self.forces)-1
+    
+    def updateTorque(self, torque_id, x, y, z):
+        self.state_torques[torque_id] = [x, y, z]
+        
+    def updateForce(self, force_id, x, y, z):
+        self.state_forces[force_id] = [x, y, z]
+        
+    def updateTorqueAsForcePoint(self, torque_id, force_x, force_y, force_z, point_x, point_y, point_z):
+        torque = np.cross(np.array([force_x, force_y, force_z]), np.array([point_x, point_y, point_z]))
+        self.state_torques[torque_id] = [torque[0], torque[1], torque[2]]
         
 class MillardMuscle:
     def __init__(self):
@@ -495,7 +518,7 @@ class MillardMuscle:
         print("not implemented")
         
 class RiveraMuscle:
-    def __init__(self, name, _a, _b, _c, _L_0, _L_min, _L_m):
+    def __init__(self, name, _a, _b, _c, _L_0, _L_min):
         self.name = name
         self.a = _a
         self.b = _b
@@ -513,6 +536,8 @@ class RiveraMuscle:
         f_a = self.a*(L_t - L_m) - L_m_dot # active force
         f_p = self.b*(1 - L_m) - L_m_dot # passive force
         return (self.c*activation*f_a) + f_p # total force
+        
+    def calculateForceBetweenObjectPoints(self, origin_point, insertion_point, activation):
         
         
 class Model:
@@ -580,6 +605,13 @@ class Model:
         for o in self.objects:
             statics += self.objects[o].parentPivotSymbols + self.objects[o].static_position + self.objects[o].static_orientation + self.objects[o].static_vel + self.objects[o].static_ang_vel
         statics = sm.Matrix([statics])
+        forces_torques = []
+        for o in self.objects:
+            for f in self.objects[o].force_symbols:
+                forces_torques += f
+            for t in self.objects[o].torque_symbols:
+                forces_torques += t
+        forces_torques = sm.Matrix([forces_torques])
         qs = []
         for o in self.objects:
             qs += self.objects[o].dynamic_position + self.objects[o].dynamic_orientation
@@ -609,28 +641,34 @@ class Model:
         self.gd = self.gd.xreplace(dict(zip(self.qd, us)))
 
         # Now build the equations of motion function that will be applied each time step
-        self.eval_eom = sm.lambdify((statics, qs, us, ms, Is), [self.Mk, self.gk, self.Md, self.gd])
+        self.eval_eom = sm.lambdify((forces_torques, statics, qs, us, ms, Is), [self.Mk, self.gk, self.Md, self.gd])
         
     def solve(self, dt):
+        forces_torques_vals = []
         static_vals = []
         q_vals = []
         u_vals = []
         m_vals = []
         i_vals = []
         for name, obj in self.objects.items():
+            for f in obj.state_forces:
+                forces_torques_vals = np.concatenate([forces_torques_vals, f], axis=0)
+            for t in obj.state_torques:
+                forces_torques_vals = np.concatenate([forces_torques_vals, t], axis=0)
             static_vals = np.concatenate([static_vals, obj.getStateParentPivot(), obj.getStaticComValues(), obj.getStaticOrientationValues(), obj.getStaticVelValues(), obj.getStaticAngVelValues()], axis=0)
             q_vals = np.concatenate([q_vals, obj.getDynamicComValues(),obj.getDynamicOrientationValues()], axis=0)
             u_vals = np.concatenate([u_vals, obj.getDynamicVelValues(),obj.getDynamicAngVelValues()], axis=0)
             m_vals += [obj.state_mass]
             i_vals += [obj.state_inertia[0,0], obj.state_inertia[1,1], obj.state_inertia[2,2], obj.state_inertia[0,1], obj.state_inertia[1,2], obj.state_inertia[0,2]]
             
+        forces_torques_vals = np.array(forces_torques_vals)
         static_vals = np.array(static_vals)
         q_vals = np.array(q_vals)
         u_vals = np.array(u_vals)
         m_vals = np.array(m_vals)
         i_vals = np.array(i_vals)
         
-        Mk_vals, gk_vals, Md_vals, gd_vals = self.eval_eom(static_vals, q_vals, u_vals, m_vals, i_vals)
+        Mk_vals, gk_vals, Md_vals, gd_vals = self.eval_eom(forces_torques_vals, static_vals, q_vals, u_vals, m_vals, i_vals)
 
         # Now the hard work must be done: find the speeds and accelerations from the
         # system of equations defined by the mass matrix.
@@ -655,8 +693,8 @@ obj = Object("bone1", ['rot_z'], parent=ground, mass=10)
 obj.setStateParentPivot(np.array([0.0,-0.1, 0.0])) # pivot is -0.1 below ground
 obj.setStateCom(np.array([0.0,-0.1,0.0])) # com is -0.1 below the pivot
 obj.setStateOrientation(np.array([0.0,0.0,0.0]))
-obj.addForce(obj.mass*-9.81*ground.frame.y)
-obj.addTorque(0.0*ground.frame.z)
+obj.addForce(0.0, obj.state_mass*-9.81, 0.0, ground.frame)
+obj.addTorque(0.0, 0.0, 0.0, ground.frame)
 obj.addRotationalDamping(5)
 
 obj2 = Object("bone2", ['rot_z','pos_y'], parent=obj, mass=10)
@@ -664,10 +702,13 @@ obj2.setStateParentPivot(np.array([0.0,-0.1, 0.0]))
 obj2.setStateCom(np.array([0.0,-0.1,0.0]))
 obj2.addDOFLimits("pos_y", -0.2, 0.2)
 obj2.setStateOrientation(np.array([0.0,0.0,0.0]))
-obj2.addForce(obj.mass*-9.81*ground.frame.y)
-obj2.addTorque(0.0*ground.frame.z)
+obj2.addForce(0.0, obj.state_mass*-9.81, 0.0, ground.frame)
+obj2.addTorque(0.0, 0.0, 0.0, ground.frame)
 obj2.addRotationalDamping(5)
-obj2_torque = obj2.addTorqueAsForcePoint(100.0*obj2.frame.x, -0.5*obj2.frame.y)
+obj2_torque = obj2.addTorqueAsForcePointInFrame(100.0,0.0,0.0, 0.0,-0.5,0.0)
+
+muscle = RiveraMuscle("musc", 1.0, 1.0, 1.0, 0.6, 0.3)
+
 
 mod = Model()
 mod.addObject(obj)
@@ -679,9 +720,6 @@ vis.setupVisualiser()
 
 for i in range(1000):
     qd, ud = mod.solve(0.01)
-    
-    if i == 10:
-        obj2.updateTorque(obj2_torque, 0.0*ground.frame.z)
 
     vis.beginRendering()
     ground.draw(vis)
