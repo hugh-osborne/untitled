@@ -217,6 +217,17 @@ class Object:
             return np.matmul(self.getFrameWorldMatrix(), self.state_com)    
         return self.getParentPivotWorld() + np.matmul(self.getFrameWorldMatrix(), self.state_com)
     
+    def getPointWorld(self, point):
+        if self.parent == None:
+            return np.matmul(self.getFrameWorldMatrix(), point)    
+        return self.getParentPivotWorld() + np.matmul(self.getFrameWorldMatrix(), point)
+    
+    def getPointVelocityFrame(self, point):
+        # velocity of a point in the frame is the cross of the frame rotational_vel and the point vector from pivot
+        v = point - self.state_com
+        w = self.state_ang_vel
+        return np.cross(v,w)
+    
     def getParentPivotWorld(self):
         if self.parent == None:
             return np.matmul(self.getFrameWorldMatrix(), self.state_parent_pivot)    
@@ -442,7 +453,7 @@ class Object:
                 
     # Force and Point are given in the locel reference frame (not ground)
     def addTorqueAsForcePoint(self, force_x, force_y, force_z, point_x, point_y, point_z, frame):
-        torque = np.cross(np.array([force_x, force_y, force_z]), np.array([point_x, point_y, point_z]))
+        torque = np.cross(np.array([point_x, point_y, point_z]), np.array([force_x, force_y, force_z]))
         return self.addTorque(torque[0], torque[1], torque[2], frame)
     
     def addTorqueAsForcePointInFrame(self, force_x, force_y, force_z, point_x, point_y, point_z):
@@ -487,7 +498,7 @@ class Object:
         self.state_forces[force_id] = [x, y, z]
         
     def updateTorqueAsForcePoint(self, torque_id, force_x, force_y, force_z, point_x, point_y, point_z):
-        torque = np.cross(np.array([force_x, force_y, force_z]), np.array([point_x, point_y, point_z]))
+        torque = np.cross(np.array([point_x, point_y, point_z]), np.array([force_x, force_y, force_z]))
         self.state_torques[torque_id] = [torque[0], torque[1], torque[2]]
         
 class MillardMuscle:
@@ -518,13 +529,19 @@ class MillardMuscle:
         print("not implemented")
         
 class RiveraMuscle:
-    def __init__(self, name, _a, _b, _c, _L_0, _L_min):
+    def __init__(self, name, _a, _b, _c, _L_0, _L_min, _origin_obj, _origin_point, _insertion_obj, _insertion_point):
         self.name = name
         self.a = _a
         self.b = _b
         self.c = _c
-        self.L_0 = _L_0 # Muscle equilibirium length (spring not under tension)
+        self.L_0 = _L_0 # Muscle equilibrium length (spring not under tension)
         self.L_min = _L_min # minimum length
+        
+        self.origin_obj = _origin_obj
+        self.origin_point = _origin_point
+        self.insertion_obj = _insertion_obj
+        self.insertion_point = _insertion_point
+        self.insertion_force_id = self.insertion_obj.addTorqueAsForcePointInFrame(0.0,0.0,0.0,0.0,0.0,0.0)
         
     def calculateL_t(self, activation):
         return self.L_0 - (activation*(self.L_0 - self.L_min))
@@ -534,11 +551,32 @@ class RiveraMuscle:
         L_m = length
         L_m_dot = length_velocity
         f_a = self.a*(L_t - L_m) - L_m_dot # active force
-        f_p = self.b*(1 - L_m) - L_m_dot # passive force
+        print("lengths", L_m, self.L_0)
+        f_p = self.b*(self.L_0 - L_m) - L_m_dot # passive force
+        print("forces", f_a, f_p)
         return (self.c*activation*f_a) + f_p # total force
+    
+    def getPrincipleVector(self):
+        print("points", self.insertion_obj.getPointWorld(self.insertion_point), self.origin_obj.getPointWorld(self.origin_point))
+        return self.insertion_obj.getPointWorld(self.insertion_point) - self.origin_obj.getPointWorld(self.origin_point)
         
-    def calculateForceBetweenObjectPoints(self, origin_point, insertion_point, activation):
+    def calculateForceBetweenObjectPoints(self, activation):
+        v = self.getPrincipleVector()
+        L_m = np.linalg.norm(v)
+        L_m_dot = np.dot(self.insertion_obj.getPointVelocityFrame(self.insertion_point), v) # getPointVelocityFrame gets the velocity with respect to the parent bone - so this assumes origin_obj is the parent! Uh, Biarticular much?
+        return self.calculateForce(L_m, L_m_dot, activation)
+    
+    def updateForce(self, activation):
+        prin_vector = self.getPrincipleVector()
+        force_unit_vector = prin_vector / np.linalg.norm(prin_vector)
+        force_vector = force_unit_vector * -self.calculateForceBetweenObjectPoints(activation)
+        print("vector", force_vector[0], force_vector[1], force_vector[2])
+        self.insertion_obj.updateTorqueAsForcePoint(self.insertion_force_id, force_vector[0], force_vector[1], force_vector[2], self.insertion_point[0], self.insertion_point[1], self.insertion_point[2])
         
+    def draw(self, vis):
+        vis.drawLine(self.insertion_obj.getPointWorld(self.insertion_point), self.origin_obj.getPointWorld(self.origin_point), col=(0,0,1,1))
+        vis.drawCube(matrix=np.identity(4), model_pos=self.insertion_obj.getPointWorld(self.insertion_point), scale=0.01, col=(0,0,1,1))
+        vis.drawCube(matrix=np.identity(4), model_pos=self.origin_obj.getPointWorld(self.origin_point), scale=0.01, col=(0,0,1,1))
         
 class Model:
     def __init__(self):
@@ -693,7 +731,7 @@ obj = Object("bone1", ['rot_z'], parent=ground, mass=10)
 obj.setStateParentPivot(np.array([0.0,-0.1, 0.0])) # pivot is -0.1 below ground
 obj.setStateCom(np.array([0.0,-0.1,0.0])) # com is -0.1 below the pivot
 obj.setStateOrientation(np.array([0.0,0.0,0.0]))
-obj.addForce(0.0, obj.state_mass*-9.81, 0.0, ground.frame)
+obj.addForce(0.0, 0.0*obj.state_mass*-9.81, 0.0, ground.frame)
 obj.addTorque(0.0, 0.0, 0.0, ground.frame)
 obj.addRotationalDamping(5)
 
@@ -701,13 +739,13 @@ obj2 = Object("bone2", ['rot_z','pos_y'], parent=obj, mass=10)
 obj2.setStateParentPivot(np.array([0.0,-0.1, 0.0]))
 obj2.setStateCom(np.array([0.0,-0.1,0.0]))
 obj2.addDOFLimits("pos_y", -0.2, 0.2)
-obj2.setStateOrientation(np.array([0.0,0.0,0.0]))
-obj2.addForce(0.0, obj.state_mass*-9.81, 0.0, ground.frame)
+obj2.setStateOrientation(np.array([0.0,0.0,0.1]))
+obj2.addForce(0.0, 0.0*obj.state_mass*-9.81, 0.0, ground.frame)
 obj2.addTorque(0.0, 0.0, 0.0, ground.frame)
 obj2.addRotationalDamping(5)
-obj2_torque = obj2.addTorqueAsForcePointInFrame(100.0,0.0,0.0, 0.0,-0.5,0.0)
+#obj2_torque = obj2.addTorqueAsForcePointInFrame(100.0,0.0,0.0, 0.0,-0.5,0.0)
 
-muscle = RiveraMuscle("musc", 1.0, 1.0, 1.0, 0.6, 0.3)
+muscle = RiveraMuscle("musc", 10.0, 100.0, 1.0, 0.7, 0.3, obj, [0.0,0.0,0.0], obj2, [0.0,-0.5,0.0])
 
 
 mod = Model()
@@ -719,10 +757,12 @@ vis = Visualiser()
 vis.setupVisualiser()
 
 for i in range(1000):
+    muscle.updateForce(1.0)
     qd, ud = mod.solve(0.01)
 
     vis.beginRendering()
     ground.draw(vis)
     obj.draw(vis)
     obj2.draw(vis)
+    muscle.draw(vis)
     vis.endRendering()
