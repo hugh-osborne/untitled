@@ -551,13 +551,10 @@ class RiveraMuscle:
         L_m = length
         L_m_dot = length_velocity
         f_a = self.a*(L_t - L_m) - L_m_dot # active force
-        print("lengths", L_m, self.L_0)
         f_p = self.b*(self.L_0 - L_m) - L_m_dot # passive force
-        print("forces", f_a, f_p)
         return (self.c*activation*f_a) + f_p # total force
     
     def getPrincipleVector(self):
-        print("points", self.insertion_obj.getPointWorld(self.insertion_point), self.origin_obj.getPointWorld(self.origin_point))
         return self.insertion_obj.getPointWorld(self.insertion_point) - self.origin_obj.getPointWorld(self.origin_point)
         
     def calculateForceBetweenObjectPoints(self, activation):
@@ -570,7 +567,6 @@ class RiveraMuscle:
         prin_vector = self.getPrincipleVector()
         force_unit_vector = prin_vector / np.linalg.norm(prin_vector)
         force_vector = force_unit_vector * -self.calculateForceBetweenObjectPoints(activation)
-        print("vector", force_vector[0], force_vector[1], force_vector[2])
         self.insertion_obj.updateTorqueAsForcePoint(self.insertion_force_id, force_vector[0], force_vector[1], force_vector[2], self.insertion_point[0], self.insertion_point[1], self.insertion_point[2])
         
     def draw(self, vis):
@@ -578,6 +574,40 @@ class RiveraMuscle:
         vis.drawCube(matrix=np.identity(4), model_pos=self.insertion_obj.getPointWorld(self.insertion_point), scale=0.01, col=(0,0,1,1))
         vis.drawCube(matrix=np.identity(4), model_pos=self.origin_obj.getPointWorld(self.origin_point), scale=0.01, col=(0,0,1,1))
         
+from collada import Collada
+class Mannequin:
+    def __init__(self):
+        self.mesh = Collada('FreeAllCOLLADA.dae')
+        self.geometry = self.mesh.geometries[0]
+        self.triset = self.geometry.primitives[0]
+        self.trilist = list(self.triset)
+        self.vertices = self.triset.vertex[self.triset.vertex_index]
+        self.normals = self.triset.normal[self.triset.normal_index]
+        
+        # Eventually, these values need to be calculated based on the bones
+        self.scale = [0.1,0.1,0.1] # shrink the bloke
+        self.rot = [0.0,0.0,-90.0] # rotate the bloke to face the camera
+        self.pos = [2.0,0.0,0.0] # shift the bloke to 0.0
+        
+        # Currently this model has three figures (man woman child) in a single mesh.
+        # Man is on the left so remove all verts beyond a certain point.
+        # Later, move only the verts we're interested in to its own file (using pycollada or in blender or something)
+
+        self.cut_verts = []
+        self.cut_norms = []
+        for v in range(len(self.vertices)):
+            if np.mean(self.vertices[v], axis=0)[0] < -1.5:
+                self.cut_verts += [self.vertices[v]]
+                self.cut_norms += [self.normals[v]]
+                
+        self.vertices = self.cut_verts
+        self.normals = self.cut_norms
+        
+    def draw(self, vis):
+        for t in self.vertices:
+            vis.drawTriangle(t*self.scale, col=(1,1,1,0.5))
+        
+
 class Model:
     def __init__(self):
         self.t = me.dynamicsymbols._t
@@ -747,6 +777,8 @@ obj2.addRotationalDamping(5)
 
 muscle = RiveraMuscle("musc", 10.0, 100.0, 1.0, 0.7, 0.3, obj, [0.0,0.0,0.0], obj2, [0.0,-0.5,0.0])
 
+man = Mannequin()
+
 
 mod = Model()
 mod.addObject(obj)
@@ -765,4 +797,5 @@ for i in range(1000):
     obj.draw(vis)
     obj2.draw(vis)
     muscle.draw(vis)
+    man.draw(vis)
     vis.endRendering()

@@ -94,6 +94,13 @@ class Visualiser:
 
         glEnd()
         
+    def drawTriangle(self, verts, col=(1,1,1,1)):
+        glBegin(GL_TRIANGLES)
+        for v in verts:
+            glColor4fv(col)
+            glVertex3fv(v)
+        glEnd()
+        
     def drawCube(self, matrix=np.identity(4), scale=1.0, model_pos=np.zeros(3), col=(1,0,0,0.2)):
         local_matrix = np.identity(4)*scale
         local_matrix[3,3] = 1.0
