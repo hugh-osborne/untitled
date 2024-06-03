@@ -2,10 +2,6 @@ import pprint
 import numpy as np
 import os
 
-import OpenGL.GL
-import OpenGL.GLUT
-import OpenGL.GLU
-
 from PIL import Image
 from PIL import ImageOps
 
@@ -14,6 +10,7 @@ from pygame.locals import *
 
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from OpenGL.GLUT import *
 
 class Visualiser:
     def __init__(self, record_png=True, out_data_filename="out_data"):
@@ -65,6 +62,42 @@ class Visualiser:
             (1,5,7,2),
             (4,0,3,6)
             )
+        
+        self.vertexPositions = np.array(
+            [0.75, 0.75, 0.0, 1.0,
+            0.75, -0.75, 0.0, 1.0, 
+            -0.75, -0.75, 0.0, 1.0],
+            dtype='float32'
+        )
+
+        self.vertexDim = 4
+        self.nVertices = 3
+
+        self.strVertexShader = """
+        #version 330
+
+        layout(location = 0) in vec4 position;
+        void main()
+        {
+           gl_Position = position;
+        }
+        """
+        
+        self.strFragmentShader = """
+        #version 330
+
+        out vec4 outputColor;
+        void main()
+        {
+           outputColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+        }
+        """
+        
+        # Global variable to represent the compiled shader program, written in GLSL
+        self.theProgram = None
+
+        # Global variable to represent the buffer that will hold the position vectors
+        self.positionBufferObject = None
 
     def cube(self, pos=(0,0,0),scale=(1.0,1.0,1.0),col=(1,0,0,0.1)):
         colours = (col,col,col,col,col,col,col,col)
@@ -139,12 +172,60 @@ class Visualiser:
         glVertex2f(p1_screen[0,0], p1_screen[1,0])
         glVertex2f(p2_screen[0,0], p2_screen[1,0])
         glEnd()
+        
+    def createShader(self, shaderType, shaderFile):
+        shader = glCreateShader(shaderType)
+        glShaderSource(shader, shaderFile) # note that this is a simpler function call than in C
+    
+        glCompileShader(shader)
+    
+        status = None
+        glGetShaderiv(shader, GL_COMPILE_STATUS, status)
+        if status == GL_FALSE:
+            # Note that getting the error log is much simpler in Python than in C/C++
+            # and does not require explicit handling of the string buffer
+            strInfoLog = glGetShaderInforLog(shader)
+            strShaderType = ""
+            if shaderType is GL_VERTEX_SHADER:
+                strShaderType = "vertex"
+            elif shaderType is GL_GEOMETRY_SHADER:
+                strShaderType = "geometry"
+            elif shaderType is GL_FRAGMENT_SHADER:
+                strShaderType = "fragment"
+        
+            print("Compilation failure for " + strShaderType + " shader:\n" + strInfoLog)
+    
+        return shader
+        
+    def initializeProgram(self):
+        self.theProgram = glCreateProgram()
+        glAttachShader(self.theProgram, self.createShader(GL_VERTEX_SHADER, self.strVertexShader))
+        glAttachShader(self.theProgram, self.createShader(GL_FRAGMENT_SHADER, self.strFragmentShader))
+        glLinkProgram(self.theProgram)  
+        
+    def initializeVertexBuffer(self):
+        self.positionBufferObject = glGenBuffers(1)
+    
+        glBindBuffer(GL_ARRAY_BUFFER, self.positionBufferObject)
+        glBufferData( # PyOpenGL allows for the omission of the size parameter
+            GL_ARRAY_BUFFER,
+            self.vertexPositions,
+            GL_STATIC_DRAW
+        )
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+        
+    def init(self):
+        self.initializeProgram()
+        self.initializeVertexBuffer()
+        glBindVertexArray(glGenVertexArrays(1))
 
     def setupVisualiser(self, display_size=(800,800)):
         pygame.init()
         pygame.display.set_caption('Visualiser')
         display = display_size
         pygame.display.set_mode(display,DOUBLEBUF|OPENGL)
+        
+        self.init()
         
         glMatrixMode(GL_PROJECTION)
         glLoadIdentity()
@@ -156,8 +237,7 @@ class Visualiser:
         
         glEnable(GL_BLEND)
         glTranslatef(0.0,0.0,-2)
-        #glRotatef(0, 0, 0, 0)
-
+    
     def beginRendering(self):
         if self.closed:
             return False
@@ -231,6 +311,17 @@ class Visualiser:
             return False
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        
+        glUseProgram(self.theProgram)
+    
+        glBindBuffer(GL_ARRAY_BUFFER, self.positionBufferObject)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, self.vertexDim, GL_FLOAT, GL_FALSE, 0, None)
+    
+        glDrawArrays(GL_TRIANGLES, 0, self.nVertices)
+    
+        glDisableVertexAttribArray(0)
+        glUseProgram(0)
 
         return True
 
