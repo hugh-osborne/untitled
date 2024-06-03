@@ -94,11 +94,15 @@ class Visualiser:
 
         glEnd()
         
-    def drawTriangle(self, verts, col=(1,1,1,1)):
+    def beginTriangles(self):
         glBegin(GL_TRIANGLES)
+        
+    def drawTriangle(self, verts, col=(1,1,1,1)):
         for v in verts:
             glColor4fv(col)
             glVertex3fv(v)
+        
+    def endTriangles(self):
         glEnd()
         
     def drawCube(self, matrix=np.identity(4), scale=1.0, model_pos=np.zeros(3), col=(1,0,0,0.2)):

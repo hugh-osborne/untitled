@@ -586,26 +586,63 @@ class Mannequin:
         
         # Eventually, these values need to be calculated based on the bones
         self.scale = [0.1,0.1,0.1] # shrink the bloke
-        self.rot = [0.0,0.0,-90.0] # rotate the bloke to face the camera
-        self.pos = [2.0,0.0,0.0] # shift the bloke to 0.0
+        self.rot = [-90.0*(np.pi/180),0.0,0.0] # rotate the bloke to face the camera
+        self.pos = [3.2,0.0,-5.0] # shift the bloke to 0.0
+        
+        self.rot_x_mat = np.array([[1, 0, 0, 0],
+                          [0, np.cos(self.rot[0]), -np.sin(self.rot[0]), 0],
+                          [0, np.sin(self.rot[0]), np.cos(self.rot[0]), 0],
+                          [0, 0, 0, 1]])
+
+        self.rot_y_mat = np.array([[np.cos(self.rot[1]), 0, np.sin(self.rot[1]), 0],
+                          [0, 1, 0, 0],
+                          [-np.sin(self.rot[1]), 0, np.cos(self.rot[1]), 0],
+                          [0, 0, 0, 1]])
+        
+        self.rot_z_mat = np.array([[np.cos(self.rot[2]), -np.sin(self.rot[2]), 0, 0],
+                          [np.sin(self.rot[2]), np.cos(self.rot[2]), 0, 0],
+                          [0, 0, 1, 0],
+                          [0, 0, 0, 1]])
+        
+        self.trans_mat = [[1, 0, 0, self.pos[0]],
+                          [0, 1, 0, self.pos[1]],
+                          [0, 0, 1, self.pos[2]],
+                          [0, 0, 0, 1]]
+        
+        self.scale_mat = [[self.scale[0], 0, 0, 0],
+                          [0, self.scale[1], 0, 0],
+                          [0, 0, self.scale[2], 0],
+                          [0, 0, 0, 1]]
+        
+        self.transform_mat = np.identity(4)
+        self.transform_mat = np.matmul(self.transform_mat, self.scale_mat)
+        self.transform_mat = np.matmul(self.transform_mat, self.rot_x_mat)
+        self.transform_mat = np.matmul(self.transform_mat, self.rot_y_mat)
+        self.transform_mat = np.matmul(self.transform_mat, self.rot_z_mat)
+        self.transform_mat = np.matmul(self.transform_mat, self.trans_mat)
         
         # Currently this model has three figures (man woman child) in a single mesh.
         # Man is on the left so remove all verts beyond a certain point.
         # Later, move only the verts we're interested in to its own file (using pycollada or in blender or something)
+        # Also transform the points
 
         self.cut_verts = []
         self.cut_norms = []
         for v in range(len(self.vertices)):
             if np.mean(self.vertices[v], axis=0)[0] < -1.5:
-                self.cut_verts += [self.vertices[v]]
+                t = np.matmul(self.transform_mat, np.hstack([self.vertices[v], np.array([[1,1,1]]).T]).T)
+                self.cut_verts += [t[:3,:3]]
                 self.cut_norms += [self.normals[v]]
                 
         self.vertices = self.cut_verts
         self.normals = self.cut_norms
         
+        
     def draw(self, vis):
+        vis.beginTriangles()
         for t in self.vertices:
-            vis.drawTriangle(t*self.scale, col=(1,1,1,0.5))
+            vis.drawTriangle(t.T, col=(1,1,1,0.5))
+        vis.endTriangles()
         
 
 class Model:
