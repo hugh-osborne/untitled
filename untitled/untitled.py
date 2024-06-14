@@ -631,18 +631,16 @@ class Mannequin:
         for v in range(len(self.vertices)):
             if np.mean(self.vertices[v], axis=0)[0] < -1.5:
                 t = np.matmul(self.transform_mat, np.hstack([self.vertices[v], np.array([[1,1,1]]).T]).T)
-                self.cut_verts += [t[:3,:3]]
+                for f in range(3):
+                    self.cut_verts += t[:4,f].tolist()
                 self.cut_norms += [self.normals[v]]
                 
         self.vertices = self.cut_verts
         self.normals = self.cut_norms
         
-        
-    def draw(self, vis):
-        vis.beginTriangles()
-        for t in self.vertices:
-            vis.drawTriangle(t.T, col=(1,1,1,0.5))
-        vis.endTriangles()
+    def setVis(self, vis):
+        self.vis = vis
+        self.vis.addModel(self.vertices)
         
 
 class Model:
@@ -823,6 +821,9 @@ mod.addObject(obj2)
 mod.setup()
 
 vis = Visualiser()
+
+man.setVis(vis)
+
 vis.setupVisualiser()
 
 for i in range(1000):
@@ -834,5 +835,5 @@ for i in range(1000):
     obj.draw(vis)
     obj2.draw(vis)
     muscle.draw(vis)
-    man.draw(vis)
+    #man.draw(vis)
     vis.endRendering()
