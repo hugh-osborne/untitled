@@ -17,7 +17,7 @@ class VertexModel:
         self.vertexPositions = verts
 
         self.vertexDim = 4
-        self.nVertices = int(verts.shape[0]/4)
+        self.nVertices = int(verts.shape[0])
 
         self.strVertexShader = """
         #version 330
@@ -98,7 +98,7 @@ class VertexModel:
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, self.vertexDim, GL_FLOAT, GL_FALSE, 0, None)
     
-        glDrawArrays(GL_TRIANGLES, 0, self.nVertices)
+        glDrawArrays(GL_QUADS, 0, self.nVertices)
     
         glDisableVertexAttribArray(0)
         glUseProgram(0)
@@ -153,14 +153,7 @@ class Visualiser:
             (1,5,7,2),
             (4,0,3,6)
             )
-        
-        self.model = VertexModel(np.array(
-            [0.75, 0.75, 0.0, 1.0,
-            0.75, -0.75, 0.0, 1.0, 
-            -0.75, -0.75, 0.0, 1.0],
-            dtype='float32'
-        ))
-        
+
         self.models = []
         
     def addModel(self, verts):

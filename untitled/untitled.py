@@ -577,7 +577,7 @@ class RiveraMuscle:
 from collada import Collada
 class Mannequin:
     def __init__(self):
-        self.mesh = Collada('FreeAllCOLLADA.dae')
+        self.mesh = Collada('BaseMesh_Anim.dae')
         self.geometry = self.mesh.geometries[0]
         self.triset = self.geometry.primitives[0]
         self.trilist = list(self.triset)
@@ -585,9 +585,9 @@ class Mannequin:
         self.normals = self.triset.normal[self.triset.normal_index]
         
         # Eventually, these values need to be calculated based on the bones
-        self.scale = [0.1,0.1,0.1] # shrink the bloke
+        self.scale = [0.005,0.005,0.005] # shrink the bloke
         self.rot = [-90.0*(np.pi/180),0.0,0.0] # rotate the bloke to face the camera
-        self.pos = [3.2,0.0,-5.0] # shift the bloke to 0.0
+        self.pos = [0.0,0.0,0.0] # shift the bloke to 0.0
         
         self.rot_x_mat = np.array([[1, 0, 0, 0],
                           [0, np.cos(self.rot[0]), -np.sin(self.rot[0]), 0],
@@ -626,17 +626,12 @@ class Mannequin:
         # Later, move only the verts we're interested in to its own file (using pycollada or in blender or something)
         # Also transform the points
 
-        self.cut_verts = []
-        self.cut_norms = []
-        for v in range(len(self.vertices)):
-            if np.mean(self.vertices[v], axis=0)[0] < -1.5:
-                t = np.matmul(self.transform_mat, np.hstack([self.vertices[v], np.array([[1,1,1]]).T]).T)
-                for f in range(3):
-                    self.cut_verts += t[:4,f].tolist()
-                self.cut_norms += [self.normals[v]]
-                
-        self.vertices = self.cut_verts
-        self.normals = self.cut_norms
+        self.vertices = np.concatenate([self.vertices,np.array([np.ones(self.vertices.shape[0])]).T], axis=1)
+        self.vertices = np.matmul(self.transform_mat, self.vertices.T).T
+        
+        # Load the skin controller (for the bones and vertex weights)
+        self.controller = list(mesh.scene.objects('controller'))
+        
         
     def setVis(self, vis):
         self.vis = vis
