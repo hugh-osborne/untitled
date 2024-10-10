@@ -577,7 +577,7 @@ class RiveraMuscle:
 from collada import Collada
 class Mannequin:
     def __init__(self):
-        self.mesh = Collada('BaseMesh_Anim.dae')
+        self.mesh = Collada('BaseMesh_Anim2.dae')
         self.geometry = self.mesh.geometries[0]
         self.triset = self.geometry.primitives[0]
         self.trilist = list(self.triset)
@@ -625,17 +625,34 @@ class Mannequin:
         # Man is on the left so remove all verts beyond a certain point.
         # Later, move only the verts we're interested in to its own file (using pycollada or in blender or something)
         # Also transform the points
-
-        self.vertices = np.concatenate([self.vertices,np.array([np.ones(self.vertices.shape[0])]).T], axis=1)
-        self.vertices = np.matmul(self.transform_mat, self.vertices.T).T
+        self.vertices = self.vertices.tolist()
+        for tri in range(len(self.vertices)):
+            for v in range(len(self.vertices[tri])):
+                self.vertices[tri][v] = self.vertices[tri][v] + [1.0]
         
+        for tri in range(len(self.vertices)):
+            self.vertices[tri] = np.matmul(self.transform_mat, np.array(self.vertices[tri]).T).T
+        
+        self.vertices = np.array(self.vertices)
         # Load the skin controller (for the bones and vertex weights)
-        self.controller = list(mesh.scene.objects('controller'))
+        self.controller = list(self.mesh.scene.objects('controller'))
+        
+        self.weights = []
+        for w in range(28010):
+            self.weights += [w]
+            
+        # vcounts gives the number of bones that affect each vertex
+        # v gives pairs of values: the first of each pair is the bone index (up to 47 in this case)
+        # the second is the index to the weights loaded above
+        # so for each count in vcounts, we associate that many pairs from v with each vertex in turn
+
+        print(self.controller[0].skin.nindices)
         
         
     def setVis(self, vis):
         self.vis = vis
-        self.vis.addModel(self.vertices)
+        verts = np.reshape(self.vertices, (self.vertices.shape[0]*self.vertices.shape[1], self.vertices.shape[2]))
+        self.vis.addModel(verts)
         
 
 class Model:

@@ -98,7 +98,7 @@ class VertexModel:
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, self.vertexDim, GL_FLOAT, GL_FALSE, 0, None)
     
-        glDrawArrays(GL_QUADS, 0, self.nVertices)
+        glDrawArrays(GL_TRIANGLES, 0, self.nVertices)
     
         glDisableVertexAttribArray(0)
         glUseProgram(0)
