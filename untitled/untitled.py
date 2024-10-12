@@ -581,8 +581,6 @@ class Mannequin:
         self.geometry = self.mesh.geometries[0]
         self.triset = self.geometry.primitives[0]
         self.trilist = list(self.triset)
-        self.vertices = self.triset.vertex[self.triset.vertex_index]
-        self.normals = self.triset.normal[self.triset.normal_index]
         
         # Eventually, these values need to be calculated based on the bones
         self.scale = [0.005,0.005,0.005] # shrink the bloke
@@ -621,32 +619,44 @@ class Mannequin:
         self.transform_mat = np.matmul(self.transform_mat, self.rot_z_mat)
         self.transform_mat = np.matmul(self.transform_mat, self.trans_mat)
         
-        # Currently this model has three figures (man woman child) in a single mesh.
-        # Man is on the left so remove all verts beyond a certain point.
-        # Later, move only the verts we're interested in to its own file (using pycollada or in blender or something)
-        # Also transform the points
-        self.vertices = self.vertices.tolist()
-        for tri in range(len(self.vertices)):
-            for v in range(len(self.vertices[tri])):
-                self.vertices[tri][v] = self.vertices[tri][v] + [1.0]
-        
-        for tri in range(len(self.vertices)):
-            self.vertices[tri] = np.matmul(self.transform_mat, np.array(self.vertices[tri]).T).T
-        
-        self.vertices = np.array(self.vertices)
+        # Add 1s to the end of each vertex to make them 4D
+        self.vertices = self.triset.vertex.tolist()
+        for v in range(len(self.vertices)):
+            self.vertices[v] = self.vertices[v] + [1.0]
+            
         # Load the skin controller (for the bones and vertex weights)
         self.controller = list(self.mesh.scene.objects('controller'))
         
-        self.weights = []
-        for w in range(28010):
-            self.weights += [w]
+        print(len(self.controller[0].joint_matrices))
+        print(len(self.controller[0].skin.weights))
+        print(len(self.controller[0].skin.vcounts))
+        print(len(self.vertices))
+        
+        # Modify the vertices according to the bones and weights
+        v_counter = 0
+        for v in range(len(self.vertices)):
+            for i in range(self.controller[0].skin.vcounts[v]):
+                bone_idx = self.controller[0].skin.vertex_weight_index[v_counter*2]
+                weight_idx = self.controller[0].skin.vertex_weight_index[(v_counter*2)+1]
+                partial_matrix = self.controller[0].skin.weights[weight_idx] * list(self.controller[0].joint_matrices.values())[bone_idx]
+                self.vertices[v] = np.matmul(partial_matrix, np.array(self.vertices[v]))
+                v_counter += 1
+
+        # Transform the points according to the transform_matrix
+        self.vertices = np.matmul(self.transform_mat, np.array(self.vertices).T).T
+        
+        # Load the vertices into triangle groups
+        self.vertices = self.vertices[self.triset.vertex_index]
+        self.normals = self.triset.normal[self.triset.normal_index]
+        
+        
+        
             
         # vcounts gives the number of bones that affect each vertex
         # v gives pairs of values: the first of each pair is the bone index (up to 47 in this case)
         # the second is the index to the weights loaded above
         # so for each count in vcounts, we associate that many pairs from v with each vertex in turn
 
-        print(self.controller[0].skin.nindices)
         
         
     def setVis(self, vis):
