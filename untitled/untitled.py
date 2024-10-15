@@ -1,8 +1,11 @@
 from csv import QUOTE_ALL
+from queue import Empty
 import numpy as np
 from visualiser import Visualiser
 import sympy as sm
 import sympy.physics.mechanics as me
+
+import xml.etree.ElementTree as ET
 
 class Object:
     def __init__(self, name, dofs, parent=None, mass=100.0, inertia=np.identity(3)):
@@ -627,20 +630,50 @@ class Mannequin:
         # Load the skin controller (for the bones and vertex weights)
         self.controller = list(self.mesh.scene.objects('controller'))
         
-        print(len(self.controller[0].joint_matrices))
-        print(len(self.controller[0].skin.weights))
-        print(len(self.controller[0].skin.vcounts))
-        print(len(self.vertices))
-        
+        # Load all the bone matrices
+        tree = ET.parse('BaseMesh_Anim2.dae')
+        root = tree.getroot()
+        namespace = '{http://www.collada.org/2005/11/COLLADASchema}'
+
+        def recurse_nodes(bones_dict, node):
+            bones_dict[node.get('name').replace(".", "_")] = [np.reshape(np.array([float(a) for a in node.find(namespace + 'matrix').text.split(' ')]), (4,4)), []]
+            children = []
+            for child in node:
+                if child.tag == namespace + 'node':
+                    children += [child.get('name').replace(".", "_")]
+                    recurse_nodes(bones_dict, child)
+            bones_dict[node.get('name').replace(".", "_")][1] = children
+            
+        def recurse_nodes_additive(bones_dict, matrix, node):
+            new_matrix = np.matmul(matrix,np.reshape(np.array([float(a) for a in node.find(namespace + 'matrix').text.split(' ')]), (4,4)))
+
+            bones_dict[node.get('name').replace(".", "_")] = [new_matrix, []]
+            children = []
+            for child in node:
+                if child.tag == namespace + 'node':
+                    children += [child.get('name').replace(".", "_")]
+                    recurse_nodes_additive(bones_dict, new_matrix, child)
+            bones_dict[node.get('name').replace(".", "_")][1] = children
+
+        lib_vis_scene = root.find(namespace + 'library_visual_scenes')
+        scene = lib_vis_scene.find(namespace + 'visual_scene')
+        root_bone = scene.find(namespace + 'node')
+        bones_dict = {}
+        recurse_nodes_additive(bones_dict, np.identity(4), root_bone)
+
         # Modify the vertices according to the bones and weights
         v_counter = 0
         for v in range(len(self.vertices)):
+            vert = np.array([0.0,0.0,0.0,0.0])
             for i in range(self.controller[0].skin.vcounts[v]):
                 bone_idx = self.controller[0].skin.vertex_weight_index[v_counter*2]
                 weight_idx = self.controller[0].skin.vertex_weight_index[(v_counter*2)+1]
-                partial_matrix = self.controller[0].skin.weights[weight_idx] * list(self.controller[0].joint_matrices.values())[bone_idx]
-                self.vertices[v] = np.matmul(partial_matrix, np.array(self.vertices[v]))
+                partial_matrix_controller = list(self.controller[0].joint_matrices.values())[bone_idx] * self.controller[0].skin.weights[weight_idx]
+                partial_matrix = bones_dict[list(self.controller[0].joint_matrices.keys())[bone_idx]][0] * self.controller[0].skin.weights[weight_idx]
+                vert += np.matmul(np.matmul(partial_matrix, partial_matrix_controller), np.array(self.vertices[v])) 
                 v_counter += 1
+
+            self.vertices[v] = vert
 
         # Transform the points according to the transform_matrix
         self.vertices = np.matmul(self.transform_mat, np.array(self.vertices).T).T
@@ -648,16 +681,6 @@ class Mannequin:
         # Load the vertices into triangle groups
         self.vertices = self.vertices[self.triset.vertex_index]
         self.normals = self.triset.normal[self.triset.normal_index]
-        
-        
-        
-            
-        # vcounts gives the number of bones that affect each vertex
-        # v gives pairs of values: the first of each pair is the bone index (up to 47 in this case)
-        # the second is the index to the weights loaded above
-        # so for each count in vcounts, we associate that many pairs from v with each vertex in turn
-
-        
         
     def setVis(self, vis):
         self.vis = vis
